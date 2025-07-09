@@ -1,0 +1,43 @@
+name: document_scanner
+description: A Flutter package for scanning documents, receipts, and manuals with automatic cropping, filtering, and PDF generation.
+version: 1.0.0
+homepage: https://github.com/yourusername/document_scanner
+
+environment:
+  sdk: ^3.8.1
+  flutter: ">=3.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # Core dependencies
+  image: ^4.2.0
+  pdf: ^3.11.1
+  printing: ^5.13.4
+  
+  # Camera and file handling
+  camera: ^0.11.0+2
+  image_picker: ^1.1.2
+  file_picker: ^8.0.7
+  
+  # QR code scanning
+  qr_code_scanner: ^1.0.1
+  
+  # HTTP for downloading manuals
+  http: ^1.2.2
+  
+  # File system access
+  path_provider: ^2.1.4
+  path: ^1.9.1
+  
+  # Permissions
+  permission_handler: ^11.3.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+# AIDEV-NOTE: This package is designed to be reusable across multiple projects
+# Core functionality: Document scanning, image processing, PDF generation, QR scanning
