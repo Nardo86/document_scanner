@@ -1,7 +1,8 @@
 name: document_scanner
 description: A Flutter package for scanning documents, receipts, and manuals with automatic cropping, filtering, and PDF generation.
 version: 1.0.0
-homepage: https://github.com/yourusername/document_scanner
+homepage: https://github.com/Nardo86/document_scanner
+license: MIT
 
 environment:
   sdk: ^3.8.1
