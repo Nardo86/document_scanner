@@ -1,5 +1,13 @@
 # Document Scanner
 
+> **💝 SUPPORT THE PROJECT**  
+> If you find this package useful, consider supporting its development: **[Donate via PayPal](https://paypal.me/ErosNardi)** ☕
+>
+> **⚠️ DISCLAIMER - PRIVATE USE ONLY**  
+> This package is intended for **private use only** and is provided **without any warranty or guarantee of correct functionality**. The software is developed **100% by AI with human supervision** using advanced code generation techniques.  
+> 
+> **No Support Provided**: This is an experimental project - use at your own risk. The authors assume no responsibility for any issues, data loss, or damages that may occur from using this software.
+
 A Flutter package for scanning documents, receipts, and manuals with automatic cropping, filtering, and PDF generation. **Now with Multi-Page Support!**
 
 ## Features
