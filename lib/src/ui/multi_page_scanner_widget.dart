@@ -1,11 +1,11 @@
-import 'package:flutter/material.dart';
 import 'dart:typed_data';
+import 'package:flutter/material.dart';
 
 import '../models/scanned_document.dart';
 import '../models/scan_result.dart';
 import '../services/document_scanner_service.dart';
-import '../services/image_processor.dart';
 import '../services/pdf_generator.dart';
+import 'image_editing_widget.dart';
 
 /// Widget for multi-page document scanning with page management
 class MultiPageScannerWidget extends StatefulWidget {
@@ -32,7 +32,6 @@ class MultiPageScannerWidget extends StatefulWidget {
 
 class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
   final DocumentScannerService _scannerService = DocumentScannerService();
-  final ImageProcessor _imageProcessor = ImageProcessor();
   final PdfGenerator _pdfGenerator = PdfGenerator();
   
   MultiPageScanSession? _currentSession;
@@ -87,7 +86,7 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
     final pageCount = _currentSession!.pages.length;
     return Container(
       padding: const EdgeInsets.all(8),
-      color: Theme.of(context).primaryColor.withOpacity(0.1),
+      color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -119,7 +118,7 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
           Icon(
             _getDocumentTypeIcon(),
             size: 80,
-            color: Theme.of(context).primaryColor.withOpacity(0.7),
+            color: Theme.of(context).primaryColor.withValues(alpha: 0.7),
           ),
           const SizedBox(height: 24),
           Text(
@@ -220,7 +219,7 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
             width: double.infinity,
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: Theme.of(context).primaryColor.withOpacity(0.1),
+              color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(8),
                 topRight: Radius.circular(8),
@@ -454,28 +453,8 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
       if (result.success && result.document != null) {
         final document = result.document!;
         
-        // Create new session
-        _currentSession = MultiPageScanSession(
-          sessionId: document.id,
-          documentType: widget.documentType,
-          processingOptions: document.processingOptions,
-          startTime: DateTime.now(),
-          customFilename: widget.customFilename,
-        );
-
-        // Add first page
-        final firstPage = DocumentPage(
-          id: '${document.id}_page_1',
-          pageNumber: 1,
-          originalPath: document.originalPath,
-          scanTime: document.scanTime,
-          rawImageData: document.rawImageData,
-          processedImageData: document.processedImageData,
-          metadata: document.metadata,
-        );
-
-        _currentSession = _currentSession!.addPage(firstPage);
-        setState(() {});
+        // Show image editor for first page
+        await _showImageEditorForPage(document, 1, isFirstPage: true);
       } else {
         _handleError(result.error ?? 'Failed to scan first page');
       }
@@ -503,18 +482,8 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
         final document = result.document!;
         final pageNumber = _currentSession!.pages.length + 1;
         
-        final newPage = DocumentPage(
-          id: '${_currentSession!.sessionId}_page_$pageNumber',
-          pageNumber: pageNumber,
-          originalPath: document.originalPath,
-          scanTime: document.scanTime,
-          rawImageData: document.rawImageData,
-          processedImageData: document.processedImageData,
-          metadata: document.metadata,
-        );
-
-        _currentSession = _currentSession!.addPage(newPage);
-        setState(() {});
+        // Show image editor for new page
+        await _showImageEditorForPage(document, pageNumber, isFirstPage: false);
       } else {
         _handleError(result.error ?? 'Failed to add page');
       }
@@ -581,6 +550,8 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
       final pdfData = await _pdfGenerator.generateMultiPagePdf(
         imageDataList: imageDataList,
         documentType: widget.documentType,
+        resolution: widget.processingOptions?.pdfResolution ?? PdfResolution.quality,
+        documentFormat: widget.processingOptions?.documentFormat,
         metadata: {
           'pageCount': _currentSession!.pages.length,
           'sessionId': _currentSession!.sessionId,
@@ -598,7 +569,7 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
       );
 
       // Save to external storage
-      // AIDEV-TODO: Implement external storage saving for multi-page documents
+      // TODO: Implement external storage saving for multi-page documents
 
       final result = ScanResult.success(document: finalDocument);
       widget.onScanComplete(result);
@@ -607,6 +578,86 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
     } finally {
       setState(() => _isProcessing = false);
     }
+  }
+
+  /// Show image editor for a page (both first page and additional pages)
+  Future<void> _showImageEditorForPage(
+    ScannedDocument document,
+    int pageNumber,
+    {required bool isFirstPage}
+  ) async {
+    if (document.rawImageData == null) {
+      // No image data available, proceed with original document
+      _addPageToSession(document, pageNumber, isFirstPage);
+      return;
+    }
+
+    try {
+      // Navigate to image editing screen
+      final editedImageData = await Navigator.push<Uint8List?>(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ImageEditingWidget(
+            imageData: document.rawImageData!,
+            onImageEdited: (editedData, selectedResolution, selectedFormat) {
+              // For multi-page documents, we ignore the individual page resolution/format selection
+              // and use the widget's processing options instead
+              Navigator.pop(context, editedData);
+            },
+            onCancel: () {
+              Navigator.pop(context, null);
+            },
+          ),
+        ),
+      );
+
+      if (editedImageData != null) {
+        // User confirmed editing - create new document with edited image
+        final editedDocument = document.copyWith(
+          processedImageData: editedImageData,
+          metadata: {
+            ...document.metadata,
+            'edited': true,
+            'editedAt': DateTime.now().toIso8601String(),
+          },
+        );
+
+        _addPageToSession(editedDocument, pageNumber, isFirstPage);
+      } else {
+        // User cancelled editing - use original processed image
+        _addPageToSession(document, pageNumber, isFirstPage);
+      }
+    } catch (e) {
+      _handleError('Failed to edit image for page $pageNumber: $e');
+    }
+  }
+
+  /// Add page to session after editing
+  void _addPageToSession(ScannedDocument document, int pageNumber, bool isFirstPage) {
+    if (isFirstPage) {
+      // Create new session for first page
+      _currentSession = MultiPageScanSession(
+        sessionId: document.id,
+        documentType: widget.documentType,
+        processingOptions: document.processingOptions,
+        startTime: DateTime.now(),
+        customFilename: widget.customFilename,
+      );
+    }
+
+    // Add page to session
+    final newPage = DocumentPage(
+      id: '${_currentSession!.sessionId}_page_$pageNumber',
+      pageNumber: pageNumber,
+      originalPath: document.originalPath,
+      scanTime: document.scanTime,
+      rawImageData: document.rawImageData,
+      processedImageData: document.processedImageData,
+      metadata: document.metadata,
+    );
+
+    _currentSession = _currentSession!.addPage(newPage);
+    setState(() {});
   }
 
   /// Handle error
@@ -710,5 +761,3 @@ class _PageReorderDialogState extends State<_PageReorderDialog> {
   }
 }
 
-// AIDEV-NOTE: This widget provides a complete multi-page scanning workflow
-// with page management, preview, reordering, and PDF generation capabilities

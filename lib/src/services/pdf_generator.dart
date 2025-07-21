@@ -5,44 +5,28 @@ import '../models/scanned_document.dart';
 
 /// Service for generating PDF documents from scanned images
 class PdfGenerator {
-  /// Generate PDF from processed image data
+  /// Generate PDF from processed image data with resolution control
   Future<Uint8List> generatePdf({
     required Uint8List imageData,
     required DocumentType documentType,
+    required PdfResolution resolution,
+    DocumentFormat? documentFormat,
     Map<String, dynamic>? metadata,
   }) async {
     try {
       final pdf = pw.Document();
       
-      // Create PDF page with the image
+      // Create PDF page with the image at specified resolution
       final image = pw.MemoryImage(imageData);
+      final pageFormat = _getPageFormat(documentType, documentFormat);
       
       pdf.addPage(
         pw.Page(
-          pageFormat: _getPageFormat(documentType),
-          margin: const pw.EdgeInsets.all(20),
+          pageFormat: pageFormat,
+          margin: const pw.EdgeInsets.all(5), // Minimal margin
           build: (pw.Context context) {
-            return pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                // Add header with document info
-                _buildHeader(documentType, metadata),
-                pw.SizedBox(height: 20),
-                
-                // Add the scanned image
-                pw.Expanded(
-                  child: pw.Center(
-                    child: pw.Image(
-                      image,
-                      fit: pw.BoxFit.contain,
-                    ),
-                  ),
-                ),
-                
-                // Add footer with scan info
-                pw.SizedBox(height: 20),
-                _buildFooter(metadata),
-              ],
+            return pw.Center(
+              child: _buildImageWithResolution(image, resolution, pageFormat, documentFormat),
             );
           },
         ),
@@ -54,14 +38,18 @@ class PdfGenerator {
     }
   }
 
-  /// Generate multi-page PDF from multiple images
+  /// Generate multi-page PDF from multiple images with resolution control
+  /// NOTE: This method is ready for integration when multi-page workflow is implemented
   Future<Uint8List> generateMultiPagePdf({
     required List<Uint8List> imageDataList,
     required DocumentType documentType,
+    required PdfResolution resolution,
+    DocumentFormat? documentFormat,
     Map<String, dynamic>? metadata,
   }) async {
     try {
       final pdf = pw.Document();
+      final pageFormat = _getPageFormat(documentType, documentFormat);
       
       for (int i = 0; i < imageDataList.length; i++) {
         final imageData = imageDataList[i];
@@ -69,29 +57,28 @@ class PdfGenerator {
         
         pdf.addPage(
           pw.Page(
-            pageFormat: _getPageFormat(documentType),
-            margin: const pw.EdgeInsets.all(20),
+            pageFormat: pageFormat,
+            margin: const pw.EdgeInsets.all(5), // Minimal margin
             build: (pw.Context context) {
-              return pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
+              return pw.Stack(
                 children: [
-                  // Add header with document info and page number
-                  _buildHeader(documentType, metadata, pageNumber: i + 1, totalPages: imageDataList.length),
-                  pw.SizedBox(height: 20),
+                  // Main content - centered image with resolution control
+                  pw.Center(
+                    child: _buildImageWithResolution(image, resolution, pageFormat, documentFormat),
+                  ),
                   
-                  // Add the scanned image
-                  pw.Expanded(
-                    child: pw.Center(
-                      child: pw.Image(
-                        image,
-                        fit: pw.BoxFit.contain,
+                  // Page number in bottom-right corner
+                  pw.Positioned(
+                    bottom: 5,
+                    right: 5,
+                    child: pw.Text(
+                      '${i + 1}/${imageDataList.length}',
+                      style: const pw.TextStyle(
+                        fontSize: 10,
+                        color: PdfColors.grey700,
                       ),
                     ),
                   ),
-                  
-                  // Add footer with scan info
-                  pw.SizedBox(height: 20),
-                  _buildFooter(metadata),
                 ],
               );
             },
@@ -105,297 +92,161 @@ class PdfGenerator {
     }
   }
 
-  /// Build PDF header with document information
-  pw.Widget _buildHeader(
-    DocumentType documentType,
-    Map<String, dynamic>? metadata, {
-    int? pageNumber,
-    int? totalPages,
-  }) {
-    final title = _getDocumentTitle(documentType);
-    final scanDate = metadata?['scanTime'] ?? DateTime.now().toIso8601String();
+
+  /// Get appropriate page format for document type and format
+  /// NOTE: PDF is always A4, documentFormat only affects image scaling
+  PdfPageFormat _getPageFormat(DocumentType documentType, DocumentFormat? documentFormat) {
+    // Always return A4 format - documentFormat only affects image scaling
+    return PdfPageFormat.a4;
+  }
+
+
+  /// Build image widget with resolution control and document format scaling
+  pw.Widget _buildImageWithResolution(
+    pw.MemoryImage image,
+    PdfResolution resolution,
+    PdfPageFormat pageFormat,
+    DocumentFormat? documentFormat,
+  ) {
+    // Calculate maximum dimensions based on document format
+    final maxDimensions = _calculateMaxDimensionsForFormat(pageFormat, documentFormat);
     
-    return pw.Row(
-      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-      children: [
-        pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-            pw.Text(
-              title,
-              style: pw.TextStyle(
-                fontSize: 16,
-                fontWeight: pw.FontWeight.bold,
-              ),
-            ),
-            pw.SizedBox(height: 4),
-            pw.Text(
-              'Scanned: ${_formatDate(scanDate)}',
-              style: const pw.TextStyle(fontSize: 10),
-            ),
-          ],
-        ),
-        if (pageNumber != null && totalPages != null)
-          pw.Text(
-            'Page $pageNumber of $totalPages',
-            style: const pw.TextStyle(fontSize: 10),
-          ),
-      ],
-    );
-  }
-
-  /// Build PDF footer with metadata
-  pw.Widget _buildFooter(Map<String, dynamic>? metadata) {
-    final appName = metadata?['appName'] ?? 'Document Scanner';
-    final version = metadata?['appVersion'] ?? '1.0.0';
+    // Determine fit behavior based on document format
+    // Auto format: maintain aspect ratio (contain)
+    // Specific formats: stretch to fit format (fill)
+    final boxFit = (documentFormat == null || documentFormat == DocumentFormat.auto)
+        ? pw.BoxFit.contain
+        : pw.BoxFit.fill;
     
-    return pw.Row(
-      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-      children: [
-        pw.Text(
-          'Generated by $appName v$version',
-          style: const pw.TextStyle(fontSize: 8),
-        ),
-        pw.Text(
-          'Processed: ${_formatDate(DateTime.now().toIso8601String())}',
-          style: const pw.TextStyle(fontSize: 8),
-        ),
-      ],
-    );
-  }
-
-  /// Get appropriate page format for document type
-  PdfPageFormat _getPageFormat(DocumentType documentType) {
-    switch (documentType) {
-      case DocumentType.receipt:
-        // Use A4 portrait for receipts
-        return PdfPageFormat.a4;
-      case DocumentType.manual:
-        // Use A4 portrait for manuals
-        return PdfPageFormat.a4;
-      case DocumentType.document:
-        // Use A4 portrait for documents
-        return PdfPageFormat.a4;
-      case DocumentType.other:
-        // Default to A4 portrait
-        return PdfPageFormat.a4;
+    switch (resolution) {
+      case PdfResolution.original:
+        // Use original image resolution but constrained by document format
+        return pw.Image(
+          image,
+          fit: boxFit,
+          width: maxDimensions['width'],
+          height: maxDimensions['height'],
+        );
+      
+      case PdfResolution.quality:
+        // 300 DPI for print quality, constrained by document format
+        return pw.Image(
+          image,
+          fit: boxFit,
+          width: maxDimensions['width'],
+          height: maxDimensions['height'],
+          dpi: 300,
+        );
+      
+      case PdfResolution.size:
+        // 150 DPI for smaller file size, constrained by document format
+        return pw.Image(
+          image,
+          fit: boxFit,
+          width: maxDimensions['width'],
+          height: maxDimensions['height'],
+          dpi: 150,
+        );
     }
   }
 
-  /// Get document title based on type
-  String _getDocumentTitle(DocumentType documentType) {
-    switch (documentType) {
-      case DocumentType.receipt:
-        return 'Receipt';
-      case DocumentType.manual:
-        return 'Manual';
-      case DocumentType.document:
-        return 'Document';
-      case DocumentType.other:
-        return 'Scanned Document';
+  /// Calculate maximum dimensions based on document format
+  /// The image will be scaled to fit within these dimensions while maintaining aspect ratio
+  Map<String, double> _calculateMaxDimensionsForFormat(PdfPageFormat pageFormat, DocumentFormat? documentFormat) {
+    // A4 page dimensions with margins (5 points on each side)
+    final usableWidth = pageFormat.width - 10;  // ~585 points
+    final usableHeight = pageFormat.height - 10; // ~832 points
+    
+    if (documentFormat == null) {
+      // No format specified, use full page
+      return {
+        'width': usableWidth,
+        'height': usableHeight,
+      };
+    }
+    
+    switch (documentFormat) {
+      case DocumentFormat.auto:
+        // Use full page dimensions
+        return {
+          'width': usableWidth,
+          'height': usableHeight,
+        };
+      
+      case DocumentFormat.isoA:
+        // A4 aspect ratio (1:√2 ≈ 1:1.414)
+        return {
+          'width': usableWidth,
+          'height': usableHeight,
+        };
+      
+      case DocumentFormat.usLetter:
+        // US Letter aspect ratio (8.5:11 ≈ 1:1.294)
+        final letterHeight = usableWidth * (11.0 / 8.5);
+        return {
+          'width': usableWidth,
+          'height': letterHeight.clamp(0, usableHeight),
+        };
+      
+      case DocumentFormat.usLegal:
+        // US Legal aspect ratio (8.5:14 ≈ 1:1.647)
+        final legalHeight = usableWidth * (14.0 / 8.5);
+        return {
+          'width': usableWidth,
+          'height': legalHeight.clamp(0, usableHeight),
+        };
+      
+      case DocumentFormat.square:
+        // Square aspect ratio (1:1)
+        final squareSize = usableWidth < usableHeight ? usableWidth : usableHeight;
+        return {
+          'width': squareSize,
+          'height': squareSize,
+        };
+      
+      case DocumentFormat.receipt:
+        // Receipt aspect ratio (narrow and tall, approximately 3:11)
+        final receiptWidth = usableHeight * (3.0 / 11.0);
+        return {
+          'width': receiptWidth.clamp(0, usableWidth),
+          'height': usableHeight,
+        };
+      
+      case DocumentFormat.businessCard:
+        // Business card aspect ratio (3.5:2)
+        final cardHeight = usableWidth * (2.0 / 3.5);
+        return {
+          'width': usableWidth,
+          'height': cardHeight.clamp(0, usableHeight),
+        };
     }
   }
 
-  /// Format date for display
-  String _formatDate(String isoDate) {
-    try {
-      final date = DateTime.parse(isoDate);
-      return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
-    } catch (e) {
-      return isoDate;
-    }
-  }
-
-  /// Create PDF with custom layout for receipts
+  /// Create PDF with custom layout for receipts (deprecated - use generatePdf)
+  @Deprecated('Use generatePdf with PdfResolution parameter instead')
   Future<Uint8List> generateReceiptPdf({
     required Uint8List imageData,
     Map<String, dynamic>? metadata,
   }) async {
-    try {
-      final pdf = pw.Document();
-      final image = pw.MemoryImage(imageData);
-      
-      pdf.addPage(
-        pw.Page(
-          pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.all(15),
-          build: (pw.Context context) {
-            return pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-              children: [
-                // Receipt header
-                pw.Container(
-                  padding: const pw.EdgeInsets.all(10),
-                  decoration: pw.BoxDecoration(
-                    border: pw.Border.all(color: PdfColors.black),
-                  ),
-                  child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Text(
-                        'RECEIPT',
-                        style: pw.TextStyle(
-                          fontSize: 18,
-                          fontWeight: pw.FontWeight.bold,
-                        ),
-                      ),
-                      pw.SizedBox(height: 5),
-                      pw.Text(
-                        'Scan Date: ${_formatDate(metadata?['scanTime'] ?? DateTime.now().toIso8601String())}',
-                        style: const pw.TextStyle(fontSize: 12),
-                      ),
-                      if (metadata?['productBrand'] != null)
-                        pw.Text(
-                          'Product: ${metadata!['productBrand']} ${metadata['productModel'] ?? ''}',
-                          style: const pw.TextStyle(fontSize: 12),
-                        ),
-                      if (metadata?['purchaseDate'] != null)
-                        pw.Text(
-                          'Purchase Date: ${_formatDate(metadata!['purchaseDate'])}',
-                          style: const pw.TextStyle(fontSize: 12),
-                        ),
-                    ],
-                  ),
-                ),
-                
-                pw.SizedBox(height: 20),
-                
-                // Receipt image
-                pw.Expanded(
-                  child: pw.Container(
-                    decoration: pw.BoxDecoration(
-                      border: pw.Border.all(color: PdfColors.grey),
-                    ),
-                    child: pw.Padding(
-                      padding: const pw.EdgeInsets.all(10),
-                      child: pw.Image(
-                        image,
-                        fit: pw.BoxFit.contain,
-                      ),
-                    ),
-                  ),
-                ),
-                
-                pw.SizedBox(height: 10),
-                
-                // Footer
-                pw.Container(
-                  padding: const pw.EdgeInsets.all(5),
-                  decoration: pw.BoxDecoration(
-                    color: PdfColors.grey200,
-                  ),
-                  child: pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                    children: [
-                      pw.Text(
-                        'Generated by RobaMia',
-                        style: const pw.TextStyle(fontSize: 8),
-                      ),
-                      pw.Text(
-                        'Document Scanner v1.0.0',
-                        style: const pw.TextStyle(fontSize: 8),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
-      );
-
-      return await pdf.save();
-    } catch (e) {
-      throw Exception('Failed to generate receipt PDF: $e');
-    }
+    return generatePdf(
+      imageData: imageData,
+      documentType: DocumentType.receipt,
+      resolution: PdfResolution.quality,
+      metadata: metadata,
+    );
   }
 
-  /// Create PDF with custom layout for manuals
+  /// Create PDF with custom layout for manuals (deprecated - use generatePdf)
+  @Deprecated('Use generatePdf with PdfResolution parameter instead')
   Future<Uint8List> generateManualPdf({
     required Uint8List imageData,
     Map<String, dynamic>? metadata,
   }) async {
-    try {
-      final pdf = pw.Document();
-      final image = pw.MemoryImage(imageData);
-      
-      pdf.addPage(
-        pw.Page(
-          pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.all(20),
-          build: (pw.Context context) {
-            return pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                // Manual header
-                pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                  children: [
-                    pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        pw.Text(
-                          'INSTRUCTION MANUAL',
-                          style: pw.TextStyle(
-                            fontSize: 16,
-                            fontWeight: pw.FontWeight.bold,
-                          ),
-                        ),
-                        if (metadata?['productBrand'] != null)
-                          pw.Text(
-                            '${metadata!['productBrand']} ${metadata['productModel'] ?? ''}',
-                            style: pw.TextStyle(
-                              fontSize: 14,
-                              fontWeight: pw.FontWeight.bold,
-                            ),
-                          ),
-                      ],
-                    ),
-                    pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.end,
-                      children: [
-                        pw.Text(
-                          'Downloaded: ${_formatDate(metadata?['downloadTime'] ?? DateTime.now().toIso8601String())}',
-                          style: const pw.TextStyle(fontSize: 10),
-                        ),
-                        if (metadata?['sourceUrl'] != null)
-                          pw.Text(
-                            'Source: ${metadata!['sourceUrl']}',
-                            style: const pw.TextStyle(fontSize: 8),
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-                
-                pw.SizedBox(height: 20),
-                
-                // Manual content
-                pw.Expanded(
-                  child: pw.Center(
-                    child: pw.Image(
-                      image,
-                      fit: pw.BoxFit.contain,
-                    ),
-                  ),
-                ),
-                
-                pw.SizedBox(height: 20),
-                
-                // Footer
-                _buildFooter(metadata),
-              ],
-            );
-          },
-        ),
-      );
-
-      return await pdf.save();
-    } catch (e) {
-      throw Exception('Failed to generate manual PDF: $e');
-    }
+    return generatePdf(
+      imageData: imageData,
+      documentType: DocumentType.manual,
+      resolution: PdfResolution.quality,
+      metadata: metadata,
+    );
   }
 }
-
-// AIDEV-NOTE: This PDF generator creates optimized PDFs for different document types
-// with appropriate headers, footers, and metadata for easy organization

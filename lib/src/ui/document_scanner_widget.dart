@@ -1,10 +1,10 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:qr_code_scanner/qr_code_scanner.dart';
 
 import '../models/scanned_document.dart';
 import '../models/scan_result.dart';
 import '../services/document_scanner_service.dart';
-import '../services/qr_scanner_service.dart';
+import 'image_editing_widget.dart';
 
 /// Main widget for document scanning functionality
 class DocumentScannerWidget extends StatefulWidget {
@@ -37,7 +37,6 @@ class DocumentScannerWidget extends StatefulWidget {
 
 class _DocumentScannerWidgetState extends State<DocumentScannerWidget> {
   final DocumentScannerService _scannerService = DocumentScannerService();
-  final QRScannerService _qrService = QRScannerService();
   
   bool _isScanning = false;
   String? _currentError;
@@ -155,13 +154,7 @@ class _DocumentScannerWidgetState extends State<DocumentScannerWidget> {
         const SizedBox(height: 12),
         
         // QR code scan option (for manuals)
-        if (widget.showQROption)
-          _buildOptionCard(
-            icon: Icons.qr_code_scanner,
-            title: 'Scan QR Code',
-            description: 'Scan QR code to download manual',
-            onTap: _scanQRCode,
-          ),
+        // QR option removed - use QRScannerService.scanQRCodeWithUI() directly from your app
       ],
     );
   }
@@ -268,7 +261,7 @@ class _DocumentScannerWidgetState extends State<DocumentScannerWidget> {
   /// Build processing indicator
   Widget _buildProcessingIndicator() {
     return Card(
-      color: Theme.of(context).primaryColor.withOpacity(0.1),
+      color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Row(
@@ -320,7 +313,12 @@ class _DocumentScannerWidgetState extends State<DocumentScannerWidget> {
         customFilename: widget.customFilename,
       );
 
-      widget.onScanComplete(result);
+      if (result.success && result.document != null) {
+        // Show image editor automatically after scan
+        await _showImageEditor(result.document!);
+      } else {
+        widget.onScanComplete(result);
+      }
     } catch (e) {
       _handleError('Failed to scan document: $e');
     } finally {
@@ -342,7 +340,12 @@ class _DocumentScannerWidgetState extends State<DocumentScannerWidget> {
         customFilename: widget.customFilename,
       );
 
-      widget.onScanComplete(result);
+      if (result.success && result.document != null) {
+        // Show image editor automatically after import
+        await _showImageEditor(result.document!);
+      } else {
+        widget.onScanComplete(result);
+      }
     } catch (e) {
       _handleError('Failed to import document: $e');
     } finally {
@@ -350,46 +353,99 @@ class _DocumentScannerWidgetState extends State<DocumentScannerWidget> {
     }
   }
 
-  /// Scan QR code
-  Future<void> _scanQRCode() async {
-    setState(() {
-      _isScanning = true;
-      _currentError = null;
-    });
+  /// Scan QR code - removed, use QRScannerService.scanQRCodeWithUI() directly
+  // This method has been removed to avoid conflicts with the new QR implementation
+
+  /// Show image editor automatically after scan/import
+  Future<void> _showImageEditor(ScannedDocument document) async {
+    if (document.rawImageData == null) {
+      // No image data available, proceed with original result
+      final result = ScanResult.success(document: document);
+      widget.onScanComplete(result);
+      return;
+    }
 
     try {
-      // Navigate to QR scanner screen
-      final result = await Navigator.push<QRScanResult>(
+      // Navigate to image editing screen
+      final editResult = await Navigator.push<Map<String, dynamic>?>(
         context,
         MaterialPageRoute(
-          builder: (context) => const QRScannerScreen(),
+          builder: (context) => ImageEditingWidget(
+            imageData: document.rawImageData!,
+            onImageEdited: (editedData, selectedResolution, selectedFormat) {
+              Navigator.pop(context, {'imageData': editedData, 'resolution': selectedResolution, 'format': selectedFormat});
+            },
+            onCancel: () {
+              Navigator.pop(context, null);
+            },
+          ),
         ),
       );
 
-      if (result != null && result.success) {
-        // Process QR result
-        if (result.contentType == QRContentType.pdfLink ||
-            result.contentType == QRContentType.manualLink) {
-          // Download manual from URL
-          final downloadResult = await _scannerService.downloadManualFromUrl(
-            url: result.qrData,
-            customFilename: widget.customFilename,
-          );
-          
-          widget.onScanComplete(downloadResult);
-        } else {
-          _handleError('QR code does not contain a valid manual link');
-        }
-      } else if (result != null) {
-        _handleError(result.error ?? 'QR scan failed');
+      if (editResult != null) {
+        final editedImageData = editResult['imageData'] as Uint8List;
+        final selectedResolution = editResult['resolution'] as PdfResolution;
+        final selectedFormat = editResult['format'] as DocumentFormat;
+        
+        // Create new processing options with selected resolution and format
+        final updatedProcessingOptions = DocumentProcessingOptions(
+          convertToGrayscale: widget.processingOptions?.convertToGrayscale ?? true,
+          enhanceContrast: widget.processingOptions?.enhanceContrast ?? true,
+          autoCorrectPerspective: widget.processingOptions?.autoCorrectPerspective ?? true,
+          compressionQuality: widget.processingOptions?.compressionQuality ?? 0.8,
+          outputFormat: widget.processingOptions?.outputFormat ?? ImageFormat.jpeg,
+          generatePdf: widget.processingOptions?.generatePdf ?? true,
+          saveImageFile: widget.processingOptions?.saveImageFile ?? false,
+          pdfResolution: selectedResolution, // Use selected resolution
+          documentFormat: selectedFormat, // Use selected format
+          customFilename: widget.processingOptions?.customFilename,
+        );
+        
+        // Create document with edited image and selected resolution
+        final editedDocument = ScannedDocument(
+          id: document.id,
+          type: document.type,
+          originalPath: document.originalPath,
+          scanTime: document.scanTime,
+          processingOptions: updatedProcessingOptions,
+          processedPath: document.processedPath,
+          pdfPath: document.pdfPath,
+          rawImageData: document.rawImageData,
+          processedImageData: editedImageData,
+          pdfData: document.pdfData,
+          pages: document.pages,
+          isMultiPage: document.isMultiPage,
+          metadata: {
+            ...document.metadata,
+            'edited': true,
+            'editedAt': DateTime.now().toIso8601String(),
+            'selectedResolution': selectedResolution.name,
+            'selectedFormat': selectedFormat.name,
+          },
+        );
+        
+        // Finalize the document with the selected resolution
+        final finalResult = await _scannerService.finalizeScanResult(
+          editedDocument,
+          widget.customFilename,
+        );
+        
+        widget.onScanComplete(finalResult);
+      } else {
+        // User cancelled editing
+        widget.onScanComplete(ScanResult.error(
+          error: 'Editing cancelled',
+          type: ScanResultType.scan,
+        ));
       }
     } catch (e) {
-      _handleError('Failed to scan QR code: $e');
-    } finally {
-      setState(() => _isScanning = false);
+      widget.onScanComplete(ScanResult.error(
+        error: 'Error during image editing: $e',
+        type: ScanResultType.scan,
+      ));
     }
   }
-
+  
   /// Handle error
   void _handleError(String error) {
     setState(() => _currentError = error);
@@ -467,70 +523,6 @@ class _DocumentScannerWidgetState extends State<DocumentScannerWidget> {
   }
 }
 
-/// QR Scanner Screen
-class QRScannerScreen extends StatefulWidget {
-  const QRScannerScreen({Key? key}) : super(key: key);
+// QR Scanner Screen removed - now implemented in qr_scanner_service.dart
 
-  @override
-  State<QRScannerScreen> createState() => _QRScannerScreenState();
-}
-
-class _QRScannerScreenState extends State<QRScannerScreen> {
-  final GlobalKey qrKey = GlobalKey(debugLabel: 'QR');
-  QRViewController? controller;
-  final QRScannerService _qrService = QRScannerService();
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Scan QR Code'),
-        backgroundColor: Theme.of(context).primaryColor,
-        foregroundColor: Colors.white,
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            flex: 5,
-            child: QRView(
-              key: qrKey,
-              onQRViewCreated: _onQRViewCreated,
-            ),
-          ),
-          Expanded(
-            flex: 1,
-            child: Center(
-              child: Text(
-                'Point camera at QR code to scan manual link',
-                style: Theme.of(context).textTheme.titleMedium,
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _onQRViewCreated(QRViewController controller) {
-    this.controller = controller;
-    controller.scannedDataStream.listen((scanData) {
-      if (scanData.code != null) {
-        // Process QR data
-        final result = _qrService.processQRData(scanData.code!);
-        
-        // Return result to previous screen
-        Navigator.pop(context, result);
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    controller?.dispose();
-    super.dispose();
-  }
-}
-
-// AIDEV-NOTE: This widget provides a complete UI for document scanning
 // with support for camera, gallery, and QR code scanning modes

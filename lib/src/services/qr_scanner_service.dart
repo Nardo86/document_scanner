@@ -1,27 +1,51 @@
-import 'dart:typed_data';
-import 'package:flutter/services.dart';
-import 'package:qr_code_scanner/qr_code_scanner.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
+import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:flutter/material.dart';
+import 'dart:async';
 
 import '../models/scanned_document.dart';
 import '../models/scan_result.dart';
 
 /// Service for QR code scanning and manual download
 class QRScannerService {
-  QRCodeViewController? _controller;
-
-  /// Scan QR code and return result
+  
+  /// Scan QR code and return result using mobile_scanner
   Future<QRScanResult> scanQRCode() async {
     try {
-      // This would typically be called from a QR scanner widget
-      // For now, we'll simulate the scanning process
-      // In real implementation, this would integrate with qr_code_scanner
+      // This needs to be called from a context with Navigator
+      // The UI integration will be handled by the calling widget
+      throw UnimplementedError('Use scanQRCodeWithUI() with BuildContext instead');
+    } catch (e) {
+      return QRScanResult.error(
+        error: 'Failed to scan QR code: $e',
+        qrData: '',
+      );
+    }
+  }
+  
+  /// Scan QR code with UI integration
+  Future<QRScanResult> scanQRCodeWithUI(BuildContext context) async {
+    try {
+      // Show QR scanner screen
+      final result = await Navigator.of(context).push<String>(
+        MaterialPageRoute(
+          builder: (context) => QRScannerScreen(
+            onResult: (String qrData) {
+              Navigator.of(context).pop(qrData);
+            },
+          ),
+        ),
+      );
       
-      // AIDEV-TODO: Implement actual QR scanning UI integration
-      // This is a placeholder that would be called from a QR scanner widget
+      if (result == null) {
+        return QRScanResult.error(
+          error: 'User cancelled operation',
+          qrData: '',
+        );
+      }
       
-      throw UnimplementedError('QR scanning requires UI integration');
+      return processQRData(result);
     } catch (e) {
       return QRScanResult.error(
         error: 'Failed to scan QR code: $e',
@@ -136,12 +160,7 @@ class QRScannerService {
   /// Find manual URL on brand website
   Future<String?> _findManualUrl(String brand, String model) async {
     try {
-      // AIDEV-TODO: Implement brand-specific manual search
-      // This would involve:
-      // 1. Brand-specific URL patterns
-      // 2. Web scraping or API calls
-      // 3. Model number matching
-      
+      // TODO: Implement brand-specific manual search
       // For now, try common patterns
       final commonPatterns = [
         'https://www.${brand.toLowerCase()}.com/support/manuals/$model',
@@ -213,7 +232,7 @@ class QRScannerService {
     // Try Content-Disposition header first
     final contentDisposition = headers['content-disposition'];
     if (contentDisposition != null) {
-      final match = RegExp(r'filename[^;=\n]*=((["\']).*?\2|[^;\n]*)').firstMatch(contentDisposition);
+      final match = RegExp(r'filename[^;=\n]*=([^;\n]*)').firstMatch(contentDisposition);
       if (match != null) {
         return match.group(1)?.replaceAll('"', '') ?? '';
       }
@@ -235,12 +254,7 @@ class QRScannerService {
     required String model,
   }) async {
     try {
-      // AIDEV-TODO: Implement manual search using search engines or APIs
-      // This could involve:
-      // 1. Google Custom Search API
-      // 2. Bing Search API
-      // 3. Brand-specific APIs
-      
+      // TODO: Implement manual search using search engines or APIs
       // For now, return empty list
       return [];
     } catch (e) {
@@ -284,9 +298,121 @@ class QRScannerService {
 
   /// Dispose QR scanner resources
   void dispose() {
-    _controller?.dispose();
+    // _controller?.dispose();
   }
 }
 
-// AIDEV-NOTE: This service handles QR code scanning and manual downloading
-// with support for various manual sources and file types
+/// QR Scanner Screen Widget
+class QRScannerScreen extends StatefulWidget {
+  final Function(String) onResult;
+  
+  const QRScannerScreen({
+    Key? key,
+    required this.onResult,
+  }) : super(key: key);
+
+  @override
+  State<QRScannerScreen> createState() => _QRScannerScreenState();
+}
+
+class _QRScannerScreenState extends State<QRScannerScreen> {
+  MobileScannerController controller = MobileScannerController();
+  bool _hasResult = false;
+  bool _torchOn = false;
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Scan QR Code'),
+        backgroundColor: Colors.blue,
+        foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: Icon(
+              _torchOn ? Icons.flash_on : Icons.flash_off,
+              color: _torchOn ? Colors.yellow : Colors.grey,
+            ),
+            onPressed: () async {
+              await controller.toggleTorch();
+              setState(() {
+                _torchOn = !_torchOn;
+              });
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.camera_front),
+            onPressed: () => controller.switchCamera(),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            flex: 4,
+            child: Container(
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.blue, width: 2),
+              ),
+              child: MobileScanner(
+                controller: controller,
+                onDetect: (capture) {
+                  if (_hasResult) return;
+                  
+                  final List<Barcode> barcodes = capture.barcodes;
+                  for (final barcode in barcodes) {
+                    if (barcode.rawValue != null) {
+                      _hasResult = true;
+                      widget.onResult(barcode.rawValue!);
+                      return;
+                    }
+                  }
+                },
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 1,
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              width: double.infinity,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.qr_code_scanner,
+                    size: 32,
+                    color: Colors.blue,
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Point camera at QR code',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'The QR code will be scanned automatically',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+

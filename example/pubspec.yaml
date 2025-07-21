@@ -1,0 +1,27 @@
+name: document_scanner_example
+description: Example app for Document Scanner package - Android only
+version: 1.0.0+1
+publish_to: 'none'
+
+environment:
+  sdk: ^3.8.1
+  flutter: ">=3.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # Local package dependency
+  document_scanner:
+    path: ../
+  
+  # Basic dependencies
+  package_info_plus: ^8.0.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true

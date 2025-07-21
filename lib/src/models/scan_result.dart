@@ -175,5 +175,3 @@ enum QRContentType {
   unknown,
 }
 
-// AIDEV-NOTE: These result classes provide a consistent interface for handling
-// all types of scan operations across different document types

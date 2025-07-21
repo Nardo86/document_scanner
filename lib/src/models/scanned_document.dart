@@ -1,5 +1,5 @@
-import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui';
 
 /// Represents a scanned document with metadata and processing options
 class ScannedDocument {
@@ -41,6 +41,7 @@ class ScannedDocument {
   ScannedDocument copyWith({
     String? processedPath,
     String? pdfPath,
+    Uint8List? rawImageData,
     Uint8List? processedImageData,
     Uint8List? pdfData,
     Map<String, dynamic>? metadata,
@@ -55,7 +56,7 @@ class ScannedDocument {
       processingOptions: processingOptions,
       processedPath: processedPath ?? this.processedPath,
       pdfPath: pdfPath ?? this.pdfPath,
-      rawImageData: rawImageData,
+      rawImageData: rawImageData ?? this.rawImageData,
       processedImageData: processedImageData ?? this.processedImageData,
       pdfData: pdfData ?? this.pdfData,
       metadata: metadata ?? this.metadata,
@@ -109,51 +110,58 @@ class DocumentProcessingOptions {
   final bool convertToGrayscale;
   final bool enhanceContrast;
   final bool autoCorrectPerspective;
-  final bool removeBackground;
   final double compressionQuality;
   final ImageFormat outputFormat;
   final bool generatePdf;
+  final bool saveImageFile; // Save processed image file alongside PDF
+  final PdfResolution pdfResolution; // PDF resolution option
+  final DocumentFormat? documentFormat; // Document format for PDF page size
   final String? customFilename;
 
   const DocumentProcessingOptions({
     this.convertToGrayscale = true,
     this.enhanceContrast = true,
     this.autoCorrectPerspective = true,
-    this.removeBackground = false,
     this.compressionQuality = 0.8,
     this.outputFormat = ImageFormat.jpeg,
     this.generatePdf = true,
+    this.saveImageFile = false, // Default: save only PDF
+    this.pdfResolution = PdfResolution.quality, // Default: 300 DPI quality
+    this.documentFormat, // Default: null (will use DocumentType fallback)
     this.customFilename,
   });
 
-  /// Default options for receipts (high contrast, grayscale, PDF)
+  /// Default options for receipts (high contrast, grayscale, PDF only)
   static const receipt = DocumentProcessingOptions(
     convertToGrayscale: true,
     enhanceContrast: true,
     autoCorrectPerspective: true,
-    removeBackground: true,
     compressionQuality: 0.9,
     generatePdf: true,
+    saveImageFile: false, // PDF only
+    pdfResolution: PdfResolution.quality, // 300 DPI for archival quality
   );
 
-  /// Default options for manuals (preserve colors, PDF)
+  /// Default options for manuals (preserve colors, PDF only)
   static const manual = DocumentProcessingOptions(
     convertToGrayscale: false,
     enhanceContrast: false,
     autoCorrectPerspective: true,
-    removeBackground: false,
     compressionQuality: 0.7,
     generatePdf: true,
+    saveImageFile: false, // PDF only
+    pdfResolution: PdfResolution.quality, // 300 DPI for detailed diagrams
   );
 
-  /// Default options for documents (balanced)
+  /// Default options for documents (balanced, PDF only)
   static const document = DocumentProcessingOptions(
     convertToGrayscale: true,
     enhanceContrast: true,
     autoCorrectPerspective: true,
-    removeBackground: false,
     compressionQuality: 0.8,
     generatePdf: true,
+    saveImageFile: false, // PDF only
+    pdfResolution: PdfResolution.quality, // 300 DPI standard
   );
 
   /// Convert to JSON
@@ -162,10 +170,11 @@ class DocumentProcessingOptions {
       'convertToGrayscale': convertToGrayscale,
       'enhanceContrast': enhanceContrast,
       'autoCorrectPerspective': autoCorrectPerspective,
-      'removeBackground': removeBackground,
       'compressionQuality': compressionQuality,
       'outputFormat': outputFormat.toString(),
       'generatePdf': generatePdf,
+      'saveImageFile': saveImageFile,
+      'pdfResolution': pdfResolution.toString(),
       'customFilename': customFilename,
     };
   }
@@ -176,13 +185,17 @@ class DocumentProcessingOptions {
       convertToGrayscale: json['convertToGrayscale'] ?? true,
       enhanceContrast: json['enhanceContrast'] ?? true,
       autoCorrectPerspective: json['autoCorrectPerspective'] ?? true,
-      removeBackground: json['removeBackground'] ?? false,
       compressionQuality: json['compressionQuality'] ?? 0.8,
       outputFormat: ImageFormat.values.firstWhere(
         (e) => e.toString() == json['outputFormat'],
         orElse: () => ImageFormat.jpeg,
       ),
       generatePdf: json['generatePdf'] ?? true,
+      saveImageFile: json['saveImageFile'] ?? false,
+      pdfResolution: PdfResolution.values.firstWhere(
+        (e) => e.toString() == json['pdfResolution'],
+        orElse: () => PdfResolution.quality,
+      ),
       customFilename: json['customFilename'],
     );
   }
@@ -193,6 +206,60 @@ enum ImageFormat {
   jpeg,
   png,
   webp,
+}
+
+/// Color filter options for image editing
+enum ColorFilter {
+  none,
+  highContrast,
+  blackAndWhite,
+}
+
+/// Document format options for crop aspect ratio
+enum DocumentFormat {
+  auto,        // Use detected dimensions
+  isoA,        // A4, A3, A5 - all have same ratio (1:√2)
+  usLetter,    // US Letter (8.5" x 11")
+  usLegal,     // US Legal (8.5" x 14")
+  square,      // Square (1:1)
+  receipt,     // Receipt format (narrow and tall)
+  businessCard, // Business card format
+}
+
+/// PDF resolution options for document output
+enum PdfResolution {
+  original,    // Use original image resolution (no scaling)
+  quality,     // 300 DPI - standard for print/archive quality
+  size,        // 150 DPI - optimized for smaller file sizes
+}
+
+/// Image editing options
+class ImageEditingOptions {
+  final int rotationDegrees; // 0, 90, 180, 270
+  final ColorFilter colorFilter;
+  final List<Offset>? cropCorners; // 4 corners for cropping
+  final DocumentFormat documentFormat; // Format for aspect ratio
+  
+  const ImageEditingOptions({
+    this.rotationDegrees = 0,
+    this.colorFilter = ColorFilter.none,
+    this.cropCorners,
+    this.documentFormat = DocumentFormat.auto,
+  });
+  
+  ImageEditingOptions copyWith({
+    int? rotationDegrees,
+    ColorFilter? colorFilter,
+    List<Offset>? cropCorners,
+    DocumentFormat? documentFormat,
+  }) {
+    return ImageEditingOptions(
+      rotationDegrees: rotationDegrees ?? this.rotationDegrees,
+      colorFilter: colorFilter ?? this.colorFilter,
+      cropCorners: cropCorners ?? this.cropCorners,
+      documentFormat: documentFormat ?? this.documentFormat,
+    );
+  }
 }
 
 /// Represents a single page in a multi-page document
@@ -341,5 +408,3 @@ class MultiPageScanSession {
   int get pageCount => pages.length;
 }
 
-// AIDEV-NOTE: This model supports both single and multi-page documents
-// MultiPageScanSession manages the progressive scanning workflow

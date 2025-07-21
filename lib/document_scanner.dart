@@ -12,6 +12,6 @@ export 'src/services/qr_scanner_service.dart';
 
 // Export UI widgets
 export 'src/ui/document_scanner_widget.dart';
+export 'src/ui/multi_page_scanner_widget.dart';
+export 'src/ui/image_editing_widget.dart';
 
-// AIDEV-NOTE: This is the main export file for the document_scanner package
-// It provides a clean API for document scanning, processing, and PDF generation
