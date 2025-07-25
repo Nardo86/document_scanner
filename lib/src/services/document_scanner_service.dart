@@ -287,17 +287,26 @@ class DocumentScannerService {
   /// Get external storage directory for documents
   Future<Directory> _getExternalStorageDirectory() async {
     if (Platform.isAndroid) {
-      // Use custom storage directory if provided, otherwise use app name or fallback
-      final appName = _customAppName ?? 'DocumentScanner';
-      final basePath = _customStorageDirectory ?? '/storage/emulated/0/Documents';
-      final directory = Directory(path.join(basePath, appName));
-      
-      if (!await directory.exists()) {
-        await directory.create(recursive: true);
+      if (_customStorageDirectory != null) {
+        // Se customStorageDirectory è fornito, usalo direttamente 
+        // SENZA aggiungere appName (evita doppia nidificazione)
+        final directory = Directory(_customStorageDirectory!);
+        if (!await directory.exists()) {
+          await directory.create(recursive: true);
+        }
+        return directory;
+      } else {
+        // Solo quando NON c'è customStorageDirectory, usa appName
+        final appName = _customAppName ?? 'DocumentScanner';
+        final basePath = '/storage/emulated/0/Documents';
+        final directory = Directory(path.join(basePath, appName));
+        if (!await directory.exists()) {
+          await directory.create(recursive: true);
+        }
+        return directory;
       }
-      return directory;
     } else {
-      // For iOS, use custom directory if provided, otherwise use app documents directory
+      // iOS logic remains the same
       if (_customStorageDirectory != null) {
         final directory = Directory(_customStorageDirectory!);
         if (!await directory.exists()) {

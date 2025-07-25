@@ -1,6 +1,6 @@
 name: document_scanner_example
 description: Example app for Document Scanner package - Android only
-version: 1.0.0+1
+version: 1.0.1+1
 publish_to: 'none'
 
 environment:
