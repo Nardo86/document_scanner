@@ -79,6 +79,11 @@ class ScannedDocument {
     };
   }
 
+  /// Convert to Map for compatibility with existing code
+  Map<String, dynamic> toMap() {
+    return toJson();
+  }
+
   /// Create from JSON
   factory ScannedDocument.fromJson(Map<String, dynamic> json) {
     return ScannedDocument(

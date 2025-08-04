@@ -56,18 +56,39 @@ DocumentScannerService().configureStorage(
 
 ### Single Page Scanning
 
+#### Standard Workflow (with Image Editor)
 ```dart
 import 'package:document_scanner/document_scanner.dart';
 
-// Scan a single receipt
+// Scan a single receipt (opens image editor automatically)
 final result = await DocumentScannerService().scanDocument(
   documentType: DocumentType.receipt,
   processingOptions: DocumentProcessingOptions.receipt,
   customFilename: 'MyReceipt',
 );
 
+// Note: This returns raw document for editing - use finalizeScanResult() after editing
 if (result.success) {
-  print('Document saved: ${result.document?.pdfPath}');
+  print('Document captured: ${result.document?.id}');
+} else {
+  print('Error: ${result.error}');
+}
+```
+
+#### Direct Processing (bypasses Image Editor)
+```dart
+import 'package:document_scanner/document_scanner.dart';
+
+// Scan and process directly - returns final document with paths
+final result = await DocumentScannerService().scanDocumentWithProcessing(
+  documentType: DocumentType.receipt,
+  processingOptions: DocumentProcessingOptions.receipt,
+  customFilename: 'MyReceipt',
+);
+
+if (result.success) {
+  print('PDF saved: ${result.document?.pdfPath}');
+  print('Processed image: ${result.document?.processedPath}');
 } else {
   print('Error: ${result.error}');
 }
@@ -454,8 +475,11 @@ DocumentScannerService
 
 ### DocumentScannerService
 - `configureStorage()` - Configure storage paths and branding (required)
-- `scanDocument()` - Scan single page with camera
-- `importDocument()` - Import single page from gallery
+- `scanDocument()` - Scan single page with camera (returns raw document for editing)
+- `importDocument()` - Import single page from gallery (returns raw document for editing)
+- `scanDocumentWithProcessing()` - Scan and process directly (returns final document with paths)
+- `importDocumentWithProcessing()` - Import and process directly (returns final document with paths)
+- `finalizeScanResult()` - Process and save edited document (used by widgets)
 - `scanQRCode()` - Scan QR code for manual download
 - `downloadManualFromUrl()` - Download manual from URL
 

@@ -145,51 +145,6 @@ class QRScannerService {
     }
   }
 
-  /// Download manual from brand website
-  Future<ScannedDocument?> downloadManualFromBrandSite({
-    required String brand,
-    required String model,
-  }) async {
-    try {
-      // Try to find manual on brand website
-      final manualUrl = await _findManualUrl(brand, model);
-      if (manualUrl == null) {
-        throw Exception('Manual not found for $brand $model');
-      }
-
-      return await downloadManualFromUrl(manualUrl);
-    } catch (e) {
-      throw Exception('Failed to download manual from brand site: $e');
-    }
-  }
-
-  /// Find manual URL on brand website
-  Future<String?> _findManualUrl(String brand, String model) async {
-    try {
-      // TODO: Implement brand-specific manual search
-      // For now, try common patterns
-      final commonPatterns = [
-        'https://www.${brand.toLowerCase()}.com/support/manuals/$model',
-        'https://support.${brand.toLowerCase()}.com/manuals/$model.pdf',
-        'https://manuals.${brand.toLowerCase()}.com/$model.pdf',
-      ];
-
-      for (final url in commonPatterns) {
-        try {
-          final response = await http.head(Uri.parse(url));
-          if (response.statusCode == 200) {
-            return url;
-          }
-        } catch (e) {
-          // Continue to next pattern
-        }
-      }
-
-      return null;
-    } catch (e) {
-      return null;
-    }
-  }
 
   /// Determine content type of QR code data
   QRContentType _determineContentType(String qrData) {
@@ -254,19 +209,6 @@ class QRScannerService {
     }
   }
 
-  /// Search for manual online using brand and model
-  Future<List<String>> searchManualOnline({
-    required String brand,
-    required String model,
-  }) async {
-    try {
-      // TODO: Implement manual search using search engines or APIs
-      // For now, return empty list
-      return [];
-    } catch (e) {
-      return [];
-    }
-  }
 
   /// Validate manual URL before downloading
   Future<bool> validateManualUrl(String url) async {

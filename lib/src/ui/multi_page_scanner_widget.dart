@@ -568,11 +568,25 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
         },
       );
 
-      // Save to external storage
-      // TODO: Implement external storage saving for multi-page documents
+      print('🔍 MULTI-PAGE DEBUG: Final document created');
+      print('🔍 - pdfData exists: ${finalDocument.pdfData != null}');
+      print('🔍 - pdfData size: ${finalDocument.pdfData?.length ?? 0}');
 
-      final result = ScanResult.success(document: finalDocument);
-      widget.onScanComplete(result);
+      // Save to external storage using finalizeScanResult
+      final saveResult = await _scannerService.finalizeScanResult(
+        finalDocument,
+        widget.customFilename,
+      );
+
+      if (saveResult.success && saveResult.document != null) {
+        print('✅ MULTI-PAGE DEBUG: Document saved successfully');
+        print('✅ - pdfPath: ${saveResult.document!.pdfPath}');
+        print('✅ - processedPath: ${saveResult.document!.processedPath}');
+        widget.onScanComplete(saveResult);
+      } else {
+        print('❌ MULTI-PAGE DEBUG: Save failed: ${saveResult.error}');
+        _handleError('Failed to save multi-page document: ${saveResult.error}');
+      }
     } catch (e) {
       _handleError('Error finalizing document: $e');
     } finally {
