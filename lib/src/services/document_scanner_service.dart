@@ -642,7 +642,7 @@ class DocumentScannerService {
             'autoProcessed': true,
           },
         );
-        print('🔍 SCANNER DEBUG: PDF generated, size: ${pdfData?.length ?? 0}');
+        print('🔍 SCANNER DEBUG: PDF generated, size: ${pdfData.length}');
       } else {
         print('🔍 SCANNER DEBUG: PDF generation skipped (generatePdf: false)');
       }
