@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../models/scanned_document.dart';
 import '../models/scan_result.dart';
+import '../models/processing_options.dart';
 import '../services/document_scanner_service.dart';
 import 'image_editing_widget.dart';
 

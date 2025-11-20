@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 
 import '../models/scanned_document.dart';
 import '../models/scan_result.dart';
+import '../models/processing_options.dart';
+import '../models/multi_page_scan_session.dart';
+import '../models/document_page.dart';
 import '../services/document_scanner_service.dart';
 import '../services/pdf_generator.dart';
 import 'image_editing_widget.dart';

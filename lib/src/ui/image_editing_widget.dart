@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../models/scanned_document.dart';
+import '../models/processing_options.dart';
 import '../services/image_processor.dart';
 
 /// Widget for editing scanned images with rotation, color filters, and cropping

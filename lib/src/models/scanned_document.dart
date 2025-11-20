@@ -1,26 +1,173 @@
 import 'dart:typed_data';
-import 'dart:ui';
 
-/// Represents a scanned document with metadata and processing options
+import 'document_page.dart';
+import 'processing_options.dart';
+
+/// Document type classification for scanning operations
+enum DocumentType {
+  /// Receipt/invoice document
+  receipt,
+
+  /// Manual or guide document
+  manual,
+
+  /// General document (contracts, letters, etc.)
+  document,
+
+  /// Other document types
+  other,
+}
+
+/// Color filter options for image display and editing
+enum ColorFilter {
+  /// No filtering applied
+  none,
+
+  /// High contrast filter for enhanced readability
+  highContrast,
+
+  /// Black and white filter
+  blackAndWhite,
+}
+
+/// Image editing options for preview and adjustment
+class ImageEditingOptions {
+  /// Rotation angle in degrees (0, 90, 180, 270)
+  final int rotationDegrees;
+
+  /// Color filter to apply
+  final ColorFilter colorFilter;
+
+  /// Four corner points defining the crop area (optional)
+  /// In actual use, these are ui.Offset from Flutter
+  final List<dynamic>? cropCorners;
+
+  /// Document format determining aspect ratio for auto-cropping
+  final DocumentFormat documentFormat;
+
+  /// Creates new [ImageEditingOptions] for image preview and editing.
+  ///
+  /// All parameters are optional and have sensible defaults.
+  ///
+  /// Example:
+  /// ```dart
+  /// const options = ImageEditingOptions(
+  ///   rotationDegrees: 90,
+  ///   colorFilter: ColorFilter.highContrast,
+  ///   documentFormat: DocumentFormat.isoA,
+  /// );
+  /// ```
+  const ImageEditingOptions({
+    this.rotationDegrees = 0,
+    this.colorFilter = ColorFilter.none,
+    this.cropCorners,
+    this.documentFormat = DocumentFormat.auto,
+  });
+
+  /// Creates a copy with optionally updated fields.
+  ///
+  /// Example:
+  /// ```dart
+  /// final rotated = options.copyWith(rotationDegrees: 90);
+  /// ```
+  ImageEditingOptions copyWith({
+    int? rotationDegrees,
+    ColorFilter? colorFilter,
+    List<dynamic>? cropCorners,
+    DocumentFormat? documentFormat,
+  }) {
+    return ImageEditingOptions(
+      rotationDegrees: rotationDegrees ?? this.rotationDegrees,
+      colorFilter: colorFilter ?? this.colorFilter,
+      cropCorners: cropCorners ?? this.cropCorners,
+      documentFormat: documentFormat ?? this.documentFormat,
+    );
+  }
+}
+
+/// Represents a complete scanned document with metadata and processing configuration.
+///
+/// A [ScannedDocument] encapsulates:
+/// - A unique identifier and document type
+/// - File paths for original and processed image data (plus optional binary data)
+/// - Multi-page support with individual [DocumentPage] objects
+/// - Processing options that were/will be applied
+/// - Arbitrary metadata for application-specific tracking
+///
+/// Documents can be:
+/// - Single-page (simple captures from camera/gallery)
+/// - Multi-page (assembled from a [MultiPageScanSession])
+///
+/// The class provides:
+/// - Copy-with functionality for immutable updates
+/// - JSON serialization for persistence
+/// - Metadata propagation hooks for tracking document properties
+///
+/// Example:
+/// ```dart
+/// final document = ScannedDocument(
+///   id: 'doc-001',
+///   type: DocumentType.document,
+///   originalPath: '/path/to/original.jpg',
+///   scanTime: DateTime.now(),
+///   processingOptions: DocumentProcessingOptions.document,
+/// );
+/// ```
 class ScannedDocument {
+  /// Unique identifier for this document
   final String id;
+
+  /// The document type (receipt, manual, document, other)
   final DocumentType type;
+
+  /// Path to the original captured image
   final String originalPath;
+
+  /// Path to the processed image (after filtering/cropping)
   final String? processedPath;
+
+  /// Path to the generated PDF file (if generatePdf was true)
   final String? pdfPath;
+
+  /// Timestamp when the document was scanned
   final DateTime scanTime;
+
+  /// Processing options that were/will be applied to this document
   final DocumentProcessingOptions processingOptions;
+
+  /// Arbitrary application-specific metadata (e.g., OCR results, user tags)
   final Map<String, dynamic> metadata;
-  
-  // Raw image data for processing
+
+  /// Raw image data from the scanner (optional, for in-memory handling)
   final Uint8List? rawImageData;
+
+  /// Processed image data after filtering/rotation/crop (optional)
   final Uint8List? processedImageData;
+
+  /// Generated PDF binary data (optional)
   final Uint8List? pdfData;
-  
-  // Multi-page support
+
+  /// Individual pages for multi-page documents
   final List<DocumentPage> pages;
+
+  /// Whether this is a multi-page document
   final bool isMultiPage;
-  
+
+  /// Creates a new [ScannedDocument].
+  ///
+  /// The [id], [type], [originalPath], [scanTime], and [processingOptions] are required.
+  /// All other fields are optional.
+  ///
+  /// Example:
+  /// ```dart
+  /// final doc = ScannedDocument(
+  ///   id: 'doc-123',
+  ///   type: DocumentType.receipt,
+  ///   originalPath: '/path/to/receipt.jpg',
+  ///   scanTime: DateTime.now(),
+  ///   processingOptions: DocumentProcessingOptions.receipt,
+  /// );
+  /// ```
   ScannedDocument({
     required this.id,
     required this.type,
@@ -37,7 +184,18 @@ class ScannedDocument {
     this.isMultiPage = false,
   });
 
-  /// Create a copy with updated fields
+  /// Creates a copy of this document with optionally updated fields.
+  ///
+  /// Immutable operation - returns a new instance without modifying the original.
+  /// Only specified fields are overridden; others retain their values.
+  ///
+  /// Example:
+  /// ```dart
+  /// final processed = document.copyWith(
+  ///   processedPath: '/path/to/processed.jpg',
+  ///   pdfPath: '/path/to/document.pdf',
+  /// );
+  /// ```
   ScannedDocument copyWith({
     String? processedPath,
     String? pdfPath,
@@ -65,7 +223,21 @@ class ScannedDocument {
     );
   }
 
-  /// Convert to JSON for serialization
+  /// Converts this document to a JSON representation.
+  ///
+  /// Binary data (rawImageData, processedImageData, pdfData) is excluded from JSON
+  /// serialization. Use [fromJson] to deserialize.
+  ///
+  /// Useful for:
+  /// - Persisting document metadata to disk/database
+  /// - Sending document info over network
+  /// - Logging for debugging
+  ///
+  /// Example:
+  /// ```dart
+  /// final json = document.toJson();
+  /// final jsonString = jsonEncode(json);
+  /// ```
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -76,340 +248,131 @@ class ScannedDocument {
       'scanTime': scanTime.toIso8601String(),
       'processingOptions': processingOptions.toJson(),
       'metadata': metadata,
+      'isMultiPage': isMultiPage,
+      'pageCount': pages.length,
+      'pages': pages.map((p) => p.toJson()).toList(),
     };
   }
 
-  /// Convert to Map for compatibility with existing code
+  /// Converts this document to a Map (compatibility alias for [toJson]).
+  ///
+  /// Provided for backward compatibility with code expecting [toMap].
   Map<String, dynamic> toMap() {
     return toJson();
   }
 
-  /// Create from JSON
+  /// Creates a [ScannedDocument] from a JSON representation.
+  ///
+  /// Required fields: id, type, originalPath, scanTime, processingOptions.
+  /// Optional fields use sensible defaults if missing.
+  ///
+  /// Example:
+  /// ```dart
+  /// final doc = ScannedDocument.fromJson({
+  ///   'id': 'doc-123',
+  ///   'type': 'DocumentType.receipt',
+  ///   'originalPath': '/path/to/image.jpg',
+  ///   'scanTime': '2024-01-15T10:30:00.000Z',
+  ///   'processingOptions': {...},
+  /// });
+  /// ```
   factory ScannedDocument.fromJson(Map<String, dynamic> json) {
+    final pages = (json['pages'] as List<dynamic>?)
+            ?.map((p) => DocumentPage.fromJson(p as Map<String, dynamic>))
+            .toList() ??
+        [];
+
     return ScannedDocument(
-      id: json['id'],
+      id: json['id'] as String,
       type: DocumentType.values.firstWhere(
         (e) => e.toString() == json['type'],
         orElse: () => DocumentType.other,
       ),
-      originalPath: json['originalPath'],
-      processedPath: json['processedPath'],
-      pdfPath: json['pdfPath'],
-      scanTime: DateTime.parse(json['scanTime']),
-      processingOptions: DocumentProcessingOptions.fromJson(json['processingOptions']),
-      metadata: json['metadata'] ?? {},
-    );
-  }
-}
-
-/// Types of documents that can be scanned
-enum DocumentType {
-  receipt,
-  manual,
-  document,
-  other,
-}
-
-/// Processing options for document scanning
-class DocumentProcessingOptions {
-  final bool convertToGrayscale;
-  final bool enhanceContrast;
-  final bool autoCorrectPerspective;
-  final double compressionQuality;
-  final ImageFormat outputFormat;
-  final bool generatePdf;
-  final bool saveImageFile; // Save processed image file alongside PDF
-  final PdfResolution pdfResolution; // PDF resolution option
-  final DocumentFormat? documentFormat; // Document format for PDF page size
-  final String? customFilename;
-
-  const DocumentProcessingOptions({
-    this.convertToGrayscale = true,
-    this.enhanceContrast = true,
-    this.autoCorrectPerspective = true,
-    this.compressionQuality = 0.8,
-    this.outputFormat = ImageFormat.jpeg,
-    this.generatePdf = true,
-    this.saveImageFile = false, // Default: save only PDF
-    this.pdfResolution = PdfResolution.quality, // Default: 300 DPI quality
-    this.documentFormat, // Default: null (will use DocumentType fallback)
-    this.customFilename,
-  });
-
-  /// Default options for receipts (high contrast, grayscale, PDF only)
-  static const receipt = DocumentProcessingOptions(
-    convertToGrayscale: true,
-    enhanceContrast: true,
-    autoCorrectPerspective: true,
-    compressionQuality: 0.9,
-    generatePdf: true,
-    saveImageFile: false, // PDF only
-    pdfResolution: PdfResolution.quality, // 300 DPI for archival quality
-  );
-
-  /// Default options for manuals (preserve colors, PDF only)
-  static const manual = DocumentProcessingOptions(
-    convertToGrayscale: false,
-    enhanceContrast: false,
-    autoCorrectPerspective: true,
-    compressionQuality: 0.7,
-    generatePdf: true,
-    saveImageFile: false, // PDF only
-    pdfResolution: PdfResolution.quality, // 300 DPI for detailed diagrams
-  );
-
-  /// Default options for documents (balanced, PDF only)
-  static const document = DocumentProcessingOptions(
-    convertToGrayscale: true,
-    enhanceContrast: true,
-    autoCorrectPerspective: true,
-    compressionQuality: 0.8,
-    generatePdf: true,
-    saveImageFile: false, // PDF only
-    pdfResolution: PdfResolution.quality, // 300 DPI standard
-  );
-
-  /// Convert to JSON
-  Map<String, dynamic> toJson() {
-    return {
-      'convertToGrayscale': convertToGrayscale,
-      'enhanceContrast': enhanceContrast,
-      'autoCorrectPerspective': autoCorrectPerspective,
-      'compressionQuality': compressionQuality,
-      'outputFormat': outputFormat.toString(),
-      'generatePdf': generatePdf,
-      'saveImageFile': saveImageFile,
-      'pdfResolution': pdfResolution.toString(),
-      'customFilename': customFilename,
-    };
-  }
-
-  /// Create from JSON
-  factory DocumentProcessingOptions.fromJson(Map<String, dynamic> json) {
-    return DocumentProcessingOptions(
-      convertToGrayscale: json['convertToGrayscale'] ?? true,
-      enhanceContrast: json['enhanceContrast'] ?? true,
-      autoCorrectPerspective: json['autoCorrectPerspective'] ?? true,
-      compressionQuality: json['compressionQuality'] ?? 0.8,
-      outputFormat: ImageFormat.values.firstWhere(
-        (e) => e.toString() == json['outputFormat'],
-        orElse: () => ImageFormat.jpeg,
-      ),
-      generatePdf: json['generatePdf'] ?? true,
-      saveImageFile: json['saveImageFile'] ?? false,
-      pdfResolution: PdfResolution.values.firstWhere(
-        (e) => e.toString() == json['pdfResolution'],
-        orElse: () => PdfResolution.quality,
-      ),
-      customFilename: json['customFilename'],
-    );
-  }
-}
-
-/// Supported image formats
-enum ImageFormat {
-  jpeg,
-  png,
-  webp,
-}
-
-/// Color filter options for image editing
-enum ColorFilter {
-  none,
-  highContrast,
-  blackAndWhite,
-}
-
-/// Document format options for crop aspect ratio
-enum DocumentFormat {
-  auto,        // Use detected dimensions
-  isoA,        // A4, A3, A5 - all have same ratio (1:√2)
-  usLetter,    // US Letter (8.5" x 11")
-  usLegal,     // US Legal (8.5" x 14")
-  square,      // Square (1:1)
-  receipt,     // Receipt format (narrow and tall)
-  businessCard, // Business card format
-}
-
-/// PDF resolution options for document output
-enum PdfResolution {
-  original,    // Use original image resolution (no scaling)
-  quality,     // 300 DPI - standard for print/archive quality
-  size,        // 150 DPI - optimized for smaller file sizes
-}
-
-/// Image editing options
-class ImageEditingOptions {
-  final int rotationDegrees; // 0, 90, 180, 270
-  final ColorFilter colorFilter;
-  final List<Offset>? cropCorners; // 4 corners for cropping
-  final DocumentFormat documentFormat; // Format for aspect ratio
-  
-  const ImageEditingOptions({
-    this.rotationDegrees = 0,
-    this.colorFilter = ColorFilter.none,
-    this.cropCorners,
-    this.documentFormat = DocumentFormat.auto,
-  });
-  
-  ImageEditingOptions copyWith({
-    int? rotationDegrees,
-    ColorFilter? colorFilter,
-    List<Offset>? cropCorners,
-    DocumentFormat? documentFormat,
-  }) {
-    return ImageEditingOptions(
-      rotationDegrees: rotationDegrees ?? this.rotationDegrees,
-      colorFilter: colorFilter ?? this.colorFilter,
-      cropCorners: cropCorners ?? this.cropCorners,
-      documentFormat: documentFormat ?? this.documentFormat,
-    );
-  }
-}
-
-/// Represents a single page in a multi-page document
-class DocumentPage {
-  final String id;
-  final int pageNumber;
-  final String originalPath;
-  final String? processedPath;
-  final DateTime scanTime;
-  final Uint8List? rawImageData;
-  final Uint8List? processedImageData;
-  final Map<String, dynamic> metadata;
-
-  DocumentPage({
-    required this.id,
-    required this.pageNumber,
-    required this.originalPath,
-    required this.scanTime,
-    this.processedPath,
-    this.rawImageData,
-    this.processedImageData,
-    this.metadata = const {},
-  });
-
-  /// Create a copy with updated fields
-  DocumentPage copyWith({
-    String? processedPath,
-    Uint8List? processedImageData,
-    Map<String, dynamic>? metadata,
-  }) {
-    return DocumentPage(
-      id: id,
-      pageNumber: pageNumber,
-      originalPath: originalPath,
-      scanTime: scanTime,
-      processedPath: processedPath ?? this.processedPath,
-      rawImageData: rawImageData,
-      processedImageData: processedImageData ?? this.processedImageData,
-      metadata: metadata ?? this.metadata,
-    );
-  }
-
-  /// Convert to JSON
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'pageNumber': pageNumber,
-      'originalPath': originalPath,
-      'processedPath': processedPath,
-      'scanTime': scanTime.toIso8601String(),
-      'metadata': metadata,
-    };
-  }
-
-  /// Create from JSON
-  factory DocumentPage.fromJson(Map<String, dynamic> json) {
-    return DocumentPage(
-      id: json['id'],
-      pageNumber: json['pageNumber'],
-      originalPath: json['originalPath'],
-      processedPath: json['processedPath'],
-      scanTime: DateTime.parse(json['scanTime']),
-      metadata: json['metadata'] ?? {},
-    );
-  }
-}
-
-/// Multi-page document session for progressive scanning
-class MultiPageScanSession {
-  final String sessionId;
-  final DocumentType documentType;
-  final DocumentProcessingOptions processingOptions;
-  final List<DocumentPage> pages;
-  final DateTime startTime;
-  final String? customFilename;
-  
-  MultiPageScanSession({
-    required this.sessionId,
-    required this.documentType,
-    required this.processingOptions,
-    required this.startTime,
-    this.pages = const [],
-    this.customFilename,
-  });
-
-  /// Add a new page to the session
-  MultiPageScanSession addPage(DocumentPage page) {
-    final updatedPages = [...pages, page];
-    return MultiPageScanSession(
-      sessionId: sessionId,
-      documentType: documentType,
-      processingOptions: processingOptions,
-      startTime: startTime,
-      pages: updatedPages,
-      customFilename: customFilename,
-    );
-  }
-
-  /// Remove a page from the session
-  MultiPageScanSession removePage(String pageId) {
-    final updatedPages = pages.where((p) => p.id != pageId).toList();
-    return MultiPageScanSession(
-      sessionId: sessionId,
-      documentType: documentType,
-      processingOptions: processingOptions,
-      startTime: startTime,
-      pages: updatedPages,
-      customFilename: customFilename,
-    );
-  }
-
-  /// Reorder pages in the session
-  MultiPageScanSession reorderPages(List<DocumentPage> reorderedPages) {
-    return MultiPageScanSession(
-      sessionId: sessionId,
-      documentType: documentType,
-      processingOptions: processingOptions,
-      startTime: startTime,
-      pages: reorderedPages,
-      customFilename: customFilename,
-    );
-  }
-
-  /// Convert to final ScannedDocument
-  ScannedDocument toScannedDocument() {
-    return ScannedDocument(
-      id: sessionId,
-      type: documentType,
-      originalPath: pages.isNotEmpty ? pages.first.originalPath : '',
-      scanTime: startTime,
-      processingOptions: processingOptions,
+      originalPath: json['originalPath'] as String,
+      processedPath: json['processedPath'] as String?,
+      pdfPath: json['pdfPath'] as String?,
+      scanTime: DateTime.parse(json['scanTime'] as String),
+      processingOptions:
+          DocumentProcessingOptions.fromJson(json['processingOptions'] as Map<String, dynamic>),
+      metadata: json['metadata'] as Map<String, dynamic>? ?? {},
       pages: pages,
-      isMultiPage: pages.length > 1,
+      isMultiPage: json['isMultiPage'] as bool? ?? (pages.length > 1),
+    );
+  }
+
+  /// Returns a count of pages in this document.
+  ///
+  /// For multi-page documents, this equals [pages.length].
+  /// For single-page documents, returns 1 even if [pages] is empty.
+  ///
+  /// Example:
+  /// ```dart
+  /// print('Document has ${document.pageCount} pages');
+  /// ```
+  int get pageCount => isMultiPage ? pages.length : 1;
+
+  /// Returns whether this document has any processed data.
+  ///
+  /// True if either [processedPath] or [processedImageData] is present.
+  ///
+  /// Example:
+  /// ```dart
+  /// if (document.isProcessed) {
+  ///   // Use processed version
+  /// }
+  /// ```
+  bool get isProcessed => processedPath != null || processedImageData != null;
+
+  /// Returns whether this document has generated PDF output.
+  ///
+  /// True if either [pdfPath] or [pdfData] is present.
+  ///
+  /// Example:
+  /// ```dart
+  /// if (document.hasPdfOutput) {
+  ///   // Save or share the PDF
+  /// }
+  /// ```
+  bool get hasPdfOutput => pdfPath != null || pdfData != null;
+
+  /// Creates a [ScannedDocument] from a [MultiPageScanSession].
+  ///
+  /// Converts the session state into a complete document with:
+  /// - All pages from the session
+  /// - A flag indicating whether it's multi-page (pages.length > 1)
+  /// - Metadata including page count and session info
+  ///
+  /// This is typically called when the user finishes scanning and is ready
+  /// to process, save, or finalize the multi-page document.
+  ///
+  /// Example:
+  /// ```dart
+  /// import 'multi_page_scan_session.dart';
+  ///
+  /// final session = MultiPageScanSession(...);
+  /// // ... add pages ...
+  /// final document = ScannedDocument.fromSession(session);
+  /// ```
+  static ScannedDocument fromSession(dynamic sessionDynamic) {
+    // We use dynamic here to avoid circular imports
+    // The caller should pass a MultiPageScanSession
+    final session = sessionDynamic;
+    
+    return ScannedDocument(
+      id: session.sessionId as String,
+      type: session.documentType as DocumentType,
+      originalPath: (session.pages as List).isNotEmpty 
+          ? (session.pages.first as DocumentPage).originalPath 
+          : '',
+      scanTime: session.startTime as DateTime,
+      processingOptions: session.processingOptions as DocumentProcessingOptions,
+      pages: session.pages as List<DocumentPage>,
+      isMultiPage: (session.pages as List).length > 1,
       metadata: {
-        'pageCount': pages.length,
-        'sessionStartTime': startTime.toIso8601String(),
-        'customFilename': customFilename,
+        'pageCount': (session.pages as List).length,
+        'sessionStartTime': (session.startTime as DateTime).toIso8601String(),
+        'customFilename': session.customFilename,
       },
     );
   }
-
-  /// Check if session is ready for finalization
-  bool get isReadyForFinalization => pages.isNotEmpty;
-  
-  /// Get total page count
-  int get pageCount => pages.length;
 }
-

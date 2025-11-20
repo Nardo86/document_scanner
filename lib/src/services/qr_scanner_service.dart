@@ -6,6 +6,7 @@ import 'dart:async';
 
 import '../models/scanned_document.dart';
 import '../models/scan_result.dart';
+import '../models/processing_options.dart';
 
 /// Service for QR code scanning and manual download
 class QRScannerService {

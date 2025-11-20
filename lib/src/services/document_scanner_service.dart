@@ -8,6 +8,7 @@ import 'package:path/path.dart' as path;
 
 import '../models/scanned_document.dart';
 import '../models/scan_result.dart';
+import '../models/processing_options.dart';
 import 'pdf_generator.dart';
 import 'qr_scanner_service.dart';
 import 'image_processor.dart';

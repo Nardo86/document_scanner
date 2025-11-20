@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import '../models/processing_options.dart';
 import '../models/scanned_document.dart';
 
 /// Service for generating PDF documents from scanned images
