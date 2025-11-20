@@ -523,14 +523,44 @@ DocumentScannerService
 - **Progressive Loading**: Thumbnail generation is optimized for performance
 - **Storage Optimization**: PDF compression reduces file sizes significantly
 
-## Example App
+## Example App – Phase 2 Showcase
 
-The package includes an example app demonstrating all features:
+The `/example` directory now contains a multi-screen demo that mirrors the rebuilt library APIs:
+
+- **Single Page Capture** – launches `DocumentScannerWidget`, routes through the built-in editor + `PdfPreviewWidget`, and surfaces saved paths/metadata.
+- **Multi-Page Session Lab** – demonstrates `MultiPageScannerWidget` including the grid, preview/reorder dialog, and final PDF generation.
+- **PDF Review Center** – uses `PdfPreviewWidget` against previously saved `ScannedDocument` instances, reading bytes from disk when required.
+- **Capabilities Lab** – interactive playground for `DocumentProcessingOptions` that calls `scanDocumentWithProcessing` and `importDocumentWithProcessing` directly, so you can toggle grayscale, compression, DPI, formats, and filenames.
+
+Placeholder captures you can replace with real screenshots/GIFs:
+
+- `![Single page flow](example/docs/images/showcase_single_page.gif)`
+- `![Multi-page flow](example/docs/images/showcase_multi_page.gif)`
+- `![PDF review](example/docs/images/showcase_pdf_preview.png)`
+- `![Capabilities lab](example/docs/images/showcase_capabilities.gif)`
+
+### Running the showcase
 
 ```bash
 cd example
+flutter pub get
 flutter run
 ```
+
+Use the configuration card on the home screen to call `DocumentScannerService().configureStorage()` with an app name, optional custom directory, and default filename before running the flows.
+
+### Manual test checklist
+
+Run these steps on a device/emulator to validate Phase 2 end-to-end (also surfaced inside the app via the clipboard icon):
+
+1. Apply a custom app name + storage directory, capture a single page, and confirm the generated files land in that directory with the configured filename.
+2. Complete a single-page scan (edit + preview) and verify the detail card shows a preview image, metadata table, and paths.
+3. Create a multi-page session with at least three pages, reorder once, finalize the PDF, and confirm the page list reflects the correct order/count.
+4. Open the PDF review screen and preview the documents generated in the previous steps.
+5. In the capabilities lab, disable grayscale, enable "save processed image", set the PDF resolution to `original`, then run both camera and gallery experiments — verify two output paths (PDF + image) are listed.
+6. Trigger an error (deny permission or cancel mid-flow) and ensure it is captured in the home timeline with the proper status chip.
+
+For additional screenshots, troubleshooting tips, and platform notes see [`example/README.md`](example/README.md).
 
 ## Contributing
 
