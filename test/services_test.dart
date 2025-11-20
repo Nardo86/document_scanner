@@ -3,10 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 // Import test configuration
 import 'test_config.dart';
 
-// Import service tests
-import 'src/services/image_processor_test.dart';
-import 'src/services/pdf_generator_test.dart';
-
 /// Main test runner for document scanner services
 /// 
 /// This file runs all unit tests for the core services:
