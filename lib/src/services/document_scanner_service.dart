@@ -1,44 +1,64 @@
-import 'dart:io';
 import 'dart:typed_data';
-import 'package:flutter/services.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart' as path;
 
 import '../models/scanned_document.dart';
 import '../models/scan_result.dart';
+import 'camera_service.dart';
+import 'storage_helper.dart';
 import 'pdf_generator.dart';
 import 'qr_scanner_service.dart';
 import 'image_processor.dart';
 
-/// Main service for document scanning operations
+/// Main orchestrator service for document scanning operations
+/// Delegates capture/import to CameraService, uses StorageHelper for file operations,
+/// and pipes data through ImageProcessor/PdfGenerator
 class DocumentScannerService {
-  static final DocumentScannerService _instance = DocumentScannerService._internal();
   factory DocumentScannerService() => _instance;
-  DocumentScannerService._internal();
 
-  final ImagePicker _imagePicker = ImagePicker();
-  final PdfGenerator _pdfGenerator = PdfGenerator();
-  final QRScannerService _qrScanner = QRScannerService();
-  final ImageProcessor _imageProcessor = ImageProcessor();
-  
-  // Storage configuration - made configurable to remove hardcoded paths
-  String? _customStorageDirectory;
-  String? _customAppName;
-  
+  DocumentScannerService._internal({
+    CameraService? cameraService,
+    StorageHelper? storageHelper,
+    PdfGenerator? pdfGenerator,
+    QRScannerService? qrScanner,
+    ImageProcessor? imageProcessor,
+  })  : _cameraService = cameraService ?? CameraService(),
+        _storageHelper = storageHelper ?? StorageHelper(),
+        _pdfGenerator = pdfGenerator ?? PdfGenerator(),
+        _qrScanner = qrScanner ?? QRScannerService(),
+        _imageProcessor = imageProcessor ?? ImageProcessor();
+
+  static final DocumentScannerService _instance = DocumentScannerService._internal();
+
+  DocumentScannerService.withDependencies({
+    required CameraService cameraService,
+    required StorageHelper storageHelper,
+    required PdfGenerator pdfGenerator,
+    required QRScannerService qrScanner,
+    required ImageProcessor imageProcessor,
+  }) : this._internal(
+          cameraService: cameraService,
+          storageHelper: storageHelper,
+          pdfGenerator: pdfGenerator,
+          qrScanner: qrScanner,
+          imageProcessor: imageProcessor,
+        );
+
+  final CameraService _cameraService;
+  final StorageHelper _storageHelper;
+  final PdfGenerator _pdfGenerator;
+  final QRScannerService _qrScanner;
+  final ImageProcessor _imageProcessor;
+
   /// Configure storage directory and app name for file operations
   /// This must be called before any scanning operations to avoid hardcoded paths
   void configureStorage({
     String? customStorageDirectory,
     String? appName,
-    String? pdfBrandingText, // Kept for backward compatibility but no longer used
+    String? pdfBrandingText,
   }) {
-    _customStorageDirectory = customStorageDirectory;
-    _customAppName = appName;
-    
-    // Note: PDF branding is no longer supported as PDFs are now minimal
-    // The pdfBrandingText parameter is kept for backward compatibility
+    _storageHelper.configure(StorageConfig(
+      customDirectory: customStorageDirectory,
+      appName: appName,
+    ));
   }
 
   /// Scan a document using camera
@@ -46,43 +66,24 @@ class DocumentScannerService {
     required DocumentType documentType,
     DocumentProcessingOptions? processingOptions,
     String? customFilename,
-    bool autoProcess = false, // AIDEV-NOTE: Added for backward compatibility with RobaMia
+    bool autoProcess = false,
   }) async {
     try {
-      // Check camera permission
-      final hasCameraPermission = await _checkCameraPermission();
-      if (!hasCameraPermission) {
-        return ScanResult.error(error: 'Camera permission denied');
+      final captureResult = await _cameraService.captureFromCamera();
+
+      if (!captureResult.success) {
+        if (captureResult.cancelled) {
+          return ScanResult.cancelled();
+        }
+        return ScanResult.error(error: captureResult.error ?? 'Camera capture failed');
       }
 
-      // Check storage permission (needed to save processed document)
-      final hasStoragePermission = await _checkStoragePermission();
-      if (!hasStoragePermission) {
-        return ScanResult.error(error: 'Storage permission denied');
-      }
-
-      // Get processing options based on document type
       final options = processingOptions ?? _getDefaultOptions(documentType);
 
-      // Capture image
-      final XFile? image = await _imagePicker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 95,
-      );
-
-      if (image == null) {
-        return ScanResult.cancelled();
-      }
-
-      // Read image data
-      final rawImageData = await image.readAsBytes();
-
-      // AIDEV-NOTE: Backward compatibility - auto-process when requested
       if (autoProcess) {
-        print('🔍 SCANNER DEBUG: Auto-processing enabled for backward compatibility');
         return await _processAndSaveDocument(
-          rawImageData: rawImageData,
-          originalPath: image.path,
+          rawImageData: captureResult.imageData!,
+          originalPath: captureResult.path!,
           documentType: documentType,
           processingOptions: options,
           customFilename: customFilename,
@@ -90,22 +91,19 @@ class DocumentScannerService {
         );
       }
 
-      // Create scanned document
       final document = ScannedDocument(
         id: _generateId(),
         type: documentType,
-        originalPath: image.path,
+        originalPath: captureResult.path!,
         scanTime: DateTime.now(),
         processingOptions: options,
-        rawImageData: rawImageData,
+        rawImageData: captureResult.imageData,
         metadata: {
           'source': 'camera',
-          'originalSize': rawImageData.length,
+          'originalSize': captureResult.imageData!.length,
         },
       );
 
-      // Return raw document for editing workflow
-      // The widget will handle image editing and finalization
       return ScanResult.success(document: document);
     } catch (e) {
       return ScanResult.error(error: 'Failed to scan document: $e');
@@ -119,39 +117,30 @@ class DocumentScannerService {
     String? customFilename,
   }) async {
     try {
-      // Check permissions
-      final hasPermission = await _checkStoragePermission();
-      if (!hasPermission) {
-        return ScanResult.error(error: 'Storage permission denied');
+      final captureResult = await _cameraService.importFromGallery();
+
+      if (!captureResult.success) {
+        if (captureResult.cancelled) {
+          return ScanResult.cancelled();
+        }
+        return ScanResult.error(error: captureResult.error ?? 'Gallery import failed');
       }
 
       final options = processingOptions ?? _getDefaultOptions(documentType);
 
-      // Pick image from gallery
-      final XFile? image = await _imagePicker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 95,
-      );
-
-      if (image == null) {
-        return ScanResult.cancelled();
-      }
-
       final document = ScannedDocument(
         id: _generateId(),
         type: documentType,
-        originalPath: image.path,
+        originalPath: captureResult.path!,
         scanTime: DateTime.now(),
         processingOptions: options,
-        rawImageData: await image.readAsBytes(),
+        rawImageData: captureResult.imageData,
         metadata: {
           'source': 'gallery',
-          'originalSize': await image.length(),
+          'originalSize': captureResult.imageData!.length,
         },
       );
 
-      // Return raw document for editing workflow
-      // The widget will handle image editing and finalization
       return ScanResult.success(document: document);
     } catch (e) {
       return ScanResult.error(error: 'Failed to import document: $e');
@@ -159,7 +148,6 @@ class DocumentScannerService {
   }
 
   /// Scan document with automatic processing and file saving (bypasses image editor)
-  /// AIDEV-NOTE: Added for RobaMia integration - processes and saves files directly
   /// Returns ScannedDocument with populated pdfPath and processedPath
   Future<ScanResult> scanDocumentWithProcessing({
     required DocumentType documentType,
@@ -167,37 +155,20 @@ class DocumentScannerService {
     String? customFilename,
   }) async {
     try {
-      // Check camera permission
-      final hasCameraPermission = await _checkCameraPermission();
-      if (!hasCameraPermission) {
-        return ScanResult.error(error: 'Camera permission denied');
+      final captureResult = await _cameraService.captureFromCamera();
+
+      if (!captureResult.success) {
+        if (captureResult.cancelled) {
+          return ScanResult.cancelled();
+        }
+        return ScanResult.error(error: captureResult.error ?? 'Camera capture failed');
       }
 
-      // Check storage permission (needed to save processed document)
-      final hasStoragePermission = await _checkStoragePermission();
-      if (!hasStoragePermission) {
-        return ScanResult.error(error: 'Storage permission denied');
-      }
-
-      // Get processing options based on document type
       final options = processingOptions ?? _getDefaultOptions(documentType);
 
-      // Capture image
-      final XFile? image = await _imagePicker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 95,
-      );
-
-      if (image == null) {
-        return ScanResult.cancelled();
-      }
-
-      // Read image data and process using shared method
-      final rawImageData = await image.readAsBytes();
-      
       return await _processAndSaveDocument(
-        rawImageData: rawImageData,
-        originalPath: image.path,
+        rawImageData: captureResult.imageData!,
+        originalPath: captureResult.path!,
         documentType: documentType,
         processingOptions: options,
         customFilename: customFilename,
@@ -209,7 +180,6 @@ class DocumentScannerService {
   }
 
   /// Import document with automatic processing and file saving (bypasses image editor)
-  /// AIDEV-NOTE: Added for RobaMia integration - processes and saves files directly  
   /// Returns ScannedDocument with populated pdfPath and processedPath
   Future<ScanResult> importDocumentWithProcessing({
     required DocumentType documentType,
@@ -217,30 +187,20 @@ class DocumentScannerService {
     String? customFilename,
   }) async {
     try {
-      // Check permissions
-      final hasPermission = await _checkStoragePermission();
-      if (!hasPermission) {
-        return ScanResult.error(error: 'Storage permission denied');
+      final captureResult = await _cameraService.importFromGallery();
+
+      if (!captureResult.success) {
+        if (captureResult.cancelled) {
+          return ScanResult.cancelled();
+        }
+        return ScanResult.error(error: captureResult.error ?? 'Gallery import failed');
       }
 
       final options = processingOptions ?? _getDefaultOptions(documentType);
 
-      // Pick image from gallery
-      final XFile? image = await _imagePicker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 95,
-      );
-
-      if (image == null) {
-        return ScanResult.cancelled();
-      }
-
-      // Read image data and process using shared method
-      final rawImageData = await image.readAsBytes();
-      
       return await _processAndSaveDocument(
-        rawImageData: rawImageData,
-        originalPath: image.path,
+        rawImageData: captureResult.imageData!,
+        originalPath: captureResult.path!,
         documentType: documentType,
         processingOptions: options,
         customFilename: customFilename,
@@ -254,7 +214,7 @@ class DocumentScannerService {
   /// Scan QR code for manual download
   Future<QRScanResult> scanQRCode() async {
     try {
-      final hasPermission = await _checkCameraPermission();
+      final hasPermission = await _cameraService.requestCameraPermission();
       if (!hasPermission) {
         return QRScanResult.error(
           error: 'Camera permission denied',
@@ -276,35 +236,30 @@ class DocumentScannerService {
     String? customFilename,
   }) async {
     try {
-      final hasCameraPermission = await _checkCameraPermission();
+      final hasCameraPermission = await _cameraService.requestCameraPermission();
       if (!hasCameraPermission) {
         return ScanResult.error(error: 'Camera permission denied');
       }
 
-      // Check storage permission (needed to save downloaded document)
-      final hasStoragePermission = await _checkStoragePermission();
+      final hasStoragePermission = await _cameraService.requestStoragePermission();
       if (!hasStoragePermission) {
         return ScanResult.error(error: 'Storage permission denied');
       }
 
-      // First scan the QR code
       final qrResult = await _qrScanner.scanQRCode();
-      
+
       if (!qrResult.success) {
         return ScanResult.error(error: qrResult.error ?? 'QR scan failed');
       }
 
-      // Check if QR contains a downloadable link
-      if (qrResult.contentType == QRContentType.pdfLink || 
+      if (qrResult.contentType == QRContentType.pdfLink ||
           qrResult.contentType == QRContentType.manualLink) {
-        
-        // Automatically download the document
         try {
           final downloadResult = await downloadManualFromUrl(
             url: qrResult.qrData,
             customFilename: customFilename,
           );
-          
+
           return downloadResult;
         } catch (e) {
           return ScanResult.error(
@@ -316,7 +271,6 @@ class DocumentScannerService {
           );
         }
       } else {
-        // QR doesn't contain a downloadable link
         return ScanResult.error(
           error: 'QR code does not contain a downloadable document link.\nContent: ${qrResult.qrData}\nType: ${qrResult.contentType}',
           metadata: {
@@ -336,17 +290,16 @@ class DocumentScannerService {
     String? customFilename,
   }) async {
     try {
-      // Check storage permission (needed to save downloaded document)
-      final hasStoragePermission = await _checkStoragePermission();
+      final hasStoragePermission = await _cameraService.requestStoragePermission();
       if (!hasStoragePermission) {
         return ScanResult.error(error: 'Storage permission denied');
       }
+
       final document = await _qrScanner.downloadManualFromUrl(url);
       if (document == null) {
         return ScanResult.error(error: 'Failed to download manual from URL');
       }
 
-      // Save to external storage with custom filename
       final savedDocument = await _saveToExternalStorage(document, customFilename);
       return ScanResult.success(
         document: savedDocument,
@@ -357,208 +310,6 @@ class DocumentScannerService {
     }
   }
 
-
-  /// Save document to external storage with appropriate naming
-  Future<ScannedDocument> _saveToExternalStorage(
-    ScannedDocument document,
-    String? customFilename,
-  ) async {
-    final directory = await _getExternalStorageDirectory();
-    final timestamp = DateTime.now();
-    
-    // Generate filename based on document type, custom name, and metadata
-    final filename = customFilename ?? _generateFilename(document.type, timestamp, document.metadata);
-    
-    // AIDEV-DEBUG: Log before saving files
-    print('🔍 SCANNER DEBUG: _saveToExternalStorage called');
-    print('🔍 Directory: ${directory.path}');
-    print('🔍 Filename: $filename');
-    print('🔍 ProcessedImageData exists: ${document.processedImageData != null}');
-    print('🔍 ProcessedImageData size: ${document.processedImageData?.length ?? 0}');
-    print('🔍 SaveImageFile option: ${document.processingOptions.saveImageFile}');
-    print('🔍 PdfData exists: ${document.pdfData != null}');
-    print('🔍 PdfData size: ${document.pdfData?.length ?? 0}');
-    print('🔍 GeneratePdf option: ${document.processingOptions.generatePdf}');
-    
-    // Save processed image only if explicitly requested
-    String? processedPath;
-    if (document.processedImageData != null && document.processingOptions.saveImageFile) {
-      final imageFile = File(path.join(directory.path, '${filename}.jpg'));
-      await imageFile.writeAsBytes(document.processedImageData!);
-      processedPath = imageFile.path;
-      print('✅ SCANNER DEBUG: Processed image saved to: $processedPath');
-    } else {
-      print('⚠️ SCANNER DEBUG: Processed image NOT saved. Data null: ${document.processedImageData == null}, SaveImageFile: ${document.processingOptions.saveImageFile}');
-    }
-
-    // Save PDF (priority over JPG when both are enabled)
-    String? pdfPath;
-    if (document.pdfData != null) {
-      final pdfFile = File(path.join(directory.path, '${filename}.pdf'));
-      await pdfFile.writeAsBytes(document.pdfData!);
-      pdfPath = pdfFile.path;
-      print('✅ SCANNER DEBUG: PDF saved to: $pdfPath');
-    } else {
-      print('❌ SCANNER DEBUG: PDF NOT saved - pdfData is null!');
-    }
-
-    // AIDEV-DEBUG: Log final paths before copyWith
-    print('🔍 SCANNER DEBUG: Final paths before copyWith:');
-    print('🔍 processedPath: $processedPath');
-    print('🔍 pdfPath: $pdfPath');
-
-    final updatedDocument = document.copyWith(
-      processedPath: processedPath,
-      pdfPath: pdfPath,
-      metadata: {
-        ...document.metadata,
-        'savedAt': timestamp.toIso8601String(),
-        'externalPath': directory.path,
-      },
-    );
-
-    // AIDEV-DEBUG: Log paths after copyWith
-    print('✅ SCANNER DEBUG: Updated document paths:');
-    print('✅ updatedDocument.processedPath: ${updatedDocument.processedPath}');
-    print('✅ updatedDocument.pdfPath: ${updatedDocument.pdfPath}');
-
-    return updatedDocument;
-  }
-
-  /// Get external storage directory for documents
-  Future<Directory> _getExternalStorageDirectory() async {
-    if (Platform.isAndroid) {
-      if (_customStorageDirectory != null) {
-        // Se customStorageDirectory è fornito, usalo direttamente 
-        // SENZA aggiungere appName (evita doppia nidificazione)
-        final directory = Directory(_customStorageDirectory!);
-        if (!await directory.exists()) {
-          await directory.create(recursive: true);
-        }
-        return directory;
-      } else {
-        // Solo quando NON c'è customStorageDirectory, usa appName
-        final appName = _customAppName ?? 'DocumentScanner';
-        final basePath = '/storage/emulated/0/Documents';
-        final directory = Directory(path.join(basePath, appName));
-        if (!await directory.exists()) {
-          await directory.create(recursive: true);
-        }
-        return directory;
-      }
-    } else {
-      // iOS logic remains the same
-      if (_customStorageDirectory != null) {
-        final directory = Directory(_customStorageDirectory!);
-        if (!await directory.exists()) {
-          await directory.create(recursive: true);
-        }
-        return directory;
-      } else {
-        return await getApplicationDocumentsDirectory();
-      }
-    }
-  }
-
-  /// Generate appropriate filename based on document type and timestamp
-  /// Falls back to timestamp-based naming when product details are not available
-  String _generateFilename(DocumentType type, DateTime timestamp, [Map<String, dynamic>? metadata]) {
-    // Try to use suggested name from metadata first
-    if (metadata != null && metadata['suggestedFilename'] != null) {
-      return metadata['suggestedFilename'] as String;
-    }
-    
-    // Try to build name from product details if available
-    if (metadata != null) {
-      final brand = metadata['productBrand'] as String?;
-      final model = metadata['productModel'] as String?;
-      final purchaseDate = metadata['purchaseDate'] as String?;
-      
-      if (brand != null && model != null) {
-        final dateStr = purchaseDate ?? timestamp.toIso8601String().split('T')[0];
-        final typeStr = _getDocumentTypeSuffix(type);
-        // Clean brand and model for filename (remove invalid chars)
-        final cleanBrand = _cleanFilename(brand);
-        final cleanModel = _cleanFilename(model);
-        return '${dateStr}_${cleanBrand}_${cleanModel}_${typeStr}';
-      }
-    }
-    
-    // Fallback to timestamp-based naming
-    final dateTimeStr = _formatTimestampForFilename(timestamp);
-    final typeStr = _getDocumentTypeSuffix(type);
-    return '${dateTimeStr}_${typeStr}';
-  }
-  
-  /// Get document type suffix for filename
-  String _getDocumentTypeSuffix(DocumentType type) {
-    switch (type) {
-      case DocumentType.receipt:
-        return 'Receipt';
-      case DocumentType.manual:
-        return 'Manual';
-      case DocumentType.document:
-        return 'Document';
-      case DocumentType.other:
-        return 'Scan';
-    }
-  }
-  
-  /// Format timestamp for filename (yyyymmdd)
-  String _formatTimestampForFilename(DateTime timestamp) {
-    final year = timestamp.year.toString();
-    final month = timestamp.month.toString().padLeft(2, '0');
-    final day = timestamp.day.toString().padLeft(2, '0');
-    return '$year$month$day';
-  }
-  
-  /// Clean filename by removing invalid characters
-  String _cleanFilename(String input) {
-    // Replace invalid filename characters with underscores
-    return input
-        .replaceAll(RegExp(r'[<>:"/\\|?*]'), '_')
-        .replaceAll(RegExp(r'\s+'), '_')
-        .replaceAll(RegExp(r'_+'), '_')
-        .trim();
-  }
-
-  /// Get default processing options for document type
-  DocumentProcessingOptions _getDefaultOptions(DocumentType type) {
-    switch (type) {
-      case DocumentType.receipt:
-        return DocumentProcessingOptions.receipt;
-      case DocumentType.manual:
-        return DocumentProcessingOptions.manual;
-      case DocumentType.document:
-        return DocumentProcessingOptions.document;
-      case DocumentType.other:
-        return DocumentProcessingOptions.document;
-    }
-  }
-
-  /// Check camera permission
-  Future<bool> _checkCameraPermission() async {
-    final status = await Permission.camera.status;
-    if (status.isDenied) {
-      final result = await Permission.camera.request();
-      return result.isGranted;
-    }
-    return status.isGranted;
-  }
-
-  /// Check storage permission
-  Future<bool> _checkStoragePermission() async {
-    if (Platform.isAndroid) {
-      final status = await Permission.manageExternalStorage.status;
-      if (status.isDenied) {
-        final result = await Permission.manageExternalStorage.request();
-        return result.isGranted;
-      }
-      return status.isGranted;
-    }
-    return true; // iOS doesn't need explicit storage permission
-  }
-
   /// Finalize scan result after image editing (used by widgets)
   /// This method handles PDF generation and external storage saving for edited documents
   Future<ScanResult> finalizeScanResult(
@@ -566,10 +317,8 @@ class DocumentScannerService {
     String? customFilename,
   ) async {
     try {
-      // Generate PDF if the document doesn't have one and processing options require it
       Uint8List? pdfData = document.pdfData;
       if (pdfData == null && document.processingOptions.generatePdf) {
-        // Use processed image data if available, otherwise use raw image data
         final imageData = document.processedImageData ?? document.rawImageData;
         if (imageData != null) {
           pdfData = await _pdfGenerator.generatePdf(
@@ -582,7 +331,6 @@ class DocumentScannerService {
         }
       }
 
-      // Update document with PDF data
       final updatedDocument = document.copyWith(
         pdfData: pdfData,
         metadata: {
@@ -593,7 +341,6 @@ class DocumentScannerService {
         },
       );
 
-      // Save to external storage
       final savedDocument = await _saveToExternalStorage(
         updatedDocument,
         customFilename,
@@ -605,8 +352,70 @@ class DocumentScannerService {
     }
   }
 
-  /// Internal method to process and save document (shared logic)
-  /// AIDEV-NOTE: Refactored shared processing logic to avoid code duplication
+  /// Finalize multi-page document session
+  /// Combines all pages into a single PDF and saves to storage
+  Future<ScanResult> finalizeMultiPageSession(
+    MultiPageScanSession session, {
+    String? customFilename,
+  }) async {
+    try {
+      if (!session.isReadyForFinalization) {
+        return ScanResult.error(error: 'No pages to finalize');
+      }
+
+      final hasStoragePermission = await _cameraService.requestStoragePermission();
+      if (!hasStoragePermission) {
+        return ScanResult.error(error: 'Storage permission denied');
+      }
+
+      final pageImages = <Uint8List>[];
+      for (final page in session.pages) {
+        final imageData = page.processedImageData ?? page.rawImageData;
+        if (imageData != null) {
+          pageImages.add(imageData);
+        }
+      }
+
+      if (pageImages.isEmpty) {
+        return ScanResult.error(error: 'No valid page images to finalize');
+      }
+
+      Uint8List? pdfData;
+      if (session.processingOptions.generatePdf) {
+        pdfData = await _pdfGenerator.generateMultiPagePdf(
+          imageDataList: pageImages,
+          documentType: session.documentType,
+          resolution: session.processingOptions.pdfResolution,
+          documentFormat: session.processingOptions.documentFormat,
+          metadata: {
+            'pageCount': session.pages.length,
+            'sessionStartTime': session.startTime.toIso8601String(),
+          },
+        );
+      }
+
+      final document = session.toScannedDocument().copyWith(
+        pdfData: pdfData,
+        metadata: {
+          ...session.toScannedDocument().metadata,
+          'finalized': true,
+          'finalizedAt': DateTime.now().toIso8601String(),
+          'pdfSize': pdfData?.length,
+        },
+      );
+
+      final savedDocument = await _saveToExternalStorage(
+        document,
+        customFilename ?? session.customFilename,
+      );
+
+      return ScanResult.success(document: savedDocument);
+    } catch (e) {
+      return ScanResult.error(error: 'Failed to finalize multi-page session: $e');
+    }
+  }
+
+  /// Internal method to process and save document
   Future<ScanResult> _processAndSaveDocument({
     required Uint8List rawImageData,
     required String originalPath,
@@ -616,20 +425,13 @@ class DocumentScannerService {
     String? customFilename,
   }) async {
     try {
-      print('🔍 SCANNER DEBUG: _processAndSaveDocument called');
-      print('🔍 Raw image data size: ${rawImageData.length}');
-
-      // Process image automatically
       final processedImageData = await _imageProcessor.processImage(
         rawImageData,
         processingOptions,
       );
-      print('🔍 SCANNER DEBUG: Image processed, size: ${processedImageData.length}');
 
-      // Generate PDF if requested
       Uint8List? pdfData;
       if (processingOptions.generatePdf) {
-        print('🔍 SCANNER DEBUG: Generating PDF...');
         pdfData = await _pdfGenerator.generatePdf(
           imageData: processedImageData,
           documentType: documentType,
@@ -642,12 +444,8 @@ class DocumentScannerService {
             'autoProcessed': true,
           },
         );
-        print('🔍 SCANNER DEBUG: PDF generated, size: ${pdfData.length}');
-      } else {
-        print('🔍 SCANNER DEBUG: PDF generation skipped (generatePdf: false)');
       }
 
-      // Create document with processed data
       final document = ScannedDocument(
         id: _generateId(),
         type: documentType,
@@ -668,25 +466,73 @@ class DocumentScannerService {
         },
       );
 
-      print('🔍 SCANNER DEBUG: Document created with:');
-      print('🔍 - processedImageData: ${document.processedImageData != null}');
-      print('🔍 - pdfData: ${document.pdfData != null}');
-      print('🔍 - processing options generatePdf: ${document.processingOptions.generatePdf}');
-      print('🔍 - processing options saveImageFile: ${document.processingOptions.saveImageFile}');
-
-      // Save to external storage
       final savedDocument = await _saveToExternalStorage(
         document,
         customFilename,
       );
 
-      print('✅ SCANNER DEBUG: Final result paths:');
-      print('✅ - savedDocument.pdfPath: ${savedDocument.pdfPath}');
-      print('✅ - savedDocument.processedPath: ${savedDocument.processedPath}');
-
       return ScanResult.success(document: savedDocument);
     } catch (e) {
       return ScanResult.error(error: 'Failed to process and save document: $e');
+    }
+  }
+
+  /// Save document to external storage
+  Future<ScannedDocument> _saveToExternalStorage(
+    ScannedDocument document,
+    String? customFilename,
+  ) async {
+    final directory = await _storageHelper.getExternalStorageDirectory();
+    final timestamp = DateTime.now();
+
+    final filename = _storageHelper.generateFilename(
+      documentType: document.type,
+      timestamp: timestamp,
+      customFilename: customFilename,
+      metadata: document.metadata,
+    );
+
+    String? processedPath;
+    String? pdfPath;
+
+    if (document.processedImageData != null && document.processingOptions.saveImageFile) {
+      processedPath = await _storageHelper.saveImageFile(
+        directory: directory,
+        filename: filename,
+        imageData: document.processedImageData!,
+      );
+    }
+
+    if (document.pdfData != null) {
+      pdfPath = await _storageHelper.savePdfFile(
+        directory: directory,
+        filename: filename,
+        pdfData: document.pdfData!,
+      );
+    }
+
+    return document.copyWith(
+      processedPath: processedPath,
+      pdfPath: pdfPath,
+      metadata: {
+        ...document.metadata,
+        'savedAt': timestamp.toIso8601String(),
+        'externalPath': directory.path,
+      },
+    );
+  }
+
+  /// Get default processing options for document type
+  DocumentProcessingOptions _getDefaultOptions(DocumentType type) {
+    switch (type) {
+      case DocumentType.receipt:
+        return DocumentProcessingOptions.receipt;
+      case DocumentType.manual:
+        return DocumentProcessingOptions.manual;
+      case DocumentType.document:
+        return DocumentProcessingOptions.document;
+      case DocumentType.other:
+        return DocumentProcessingOptions.document;
     }
   }
 
@@ -695,4 +541,3 @@ class DocumentScannerService {
     return DateTime.now().millisecondsSinceEpoch.toString();
   }
 }
-
