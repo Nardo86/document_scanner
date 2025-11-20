@@ -1,20 +1,13 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mockito/mockito.dart';
-import 'package:mockito/annotations.dart';
 import 'package:document_scanner/document_scanner.dart';
 
-import 'image_editing_widget_test.mocks.dart';
-
-@GenerateMocks([ImageProcessor])
 void main() {
   group('ImageEditingWidget Tests', () {
     late Uint8List testImageData;
-    late MockImageProcessor mockImageProcessor;
 
     setUp(() {
-      mockImageProcessor = MockImageProcessor();
       // Create minimal test image data (just for widget structure testing)
       testImageData = Uint8List.fromList([0, 0, 0, 0]); // Minimal placeholder
     });

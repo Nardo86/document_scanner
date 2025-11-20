@@ -1,20 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mockito/mockito.dart';
-import 'package:mockito/annotations.dart';
 import 'package:document_scanner/document_scanner.dart';
 
-import 'document_scanner_widget_test.mocks.dart';
-
-@GenerateMocks([DocumentScannerService])
 void main() {
   group('DocumentScannerWidget Tests', () {
-    late MockDocumentScannerService mockScannerService;
-
-    setUp(() {
-      mockScannerService = MockDocumentScannerService();
-    });
-
     Widget createTestWidget({
       DocumentType documentType = DocumentType.document,
       DocumentProcessingOptions? processingOptions,
@@ -126,9 +115,8 @@ void main() {
     });
 
     testWidgets('should display error message when error occurs', (WidgetTester tester) async {
-      String? capturedError;
       await tester.pumpWidget(createTestWidget(
-        onError: (String error) => capturedError = error,
+        onError: (_) {},
       ));
 
       // Simulate error state by setting it directly

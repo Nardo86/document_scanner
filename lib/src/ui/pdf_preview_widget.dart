@@ -1,10 +1,6 @@
 import 'dart:typed_data';
-import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
-import '../models/scanned_document.dart';
 
 /// Widget for lightweight PDF preview before final saving
 class PdfPreviewWidget extends StatefulWidget {
@@ -30,7 +26,6 @@ class PdfPreviewWidget extends StatefulWidget {
 }
 
 class _PdfPreviewWidgetState extends State<PdfPreviewWidget> {
-  bool _pdfViewReady = false;
   String? _error;
 
   @override
@@ -313,7 +308,6 @@ class _PdfPreviewWidgetState extends State<PdfPreviewWidget> {
           OutlinedButton.icon(
             onPressed: () => setState(() {
               _error = null;
-              _pdfViewReady = false;
             }),
             icon: const Icon(Icons.refresh),
             label: const Text('Retry'),
