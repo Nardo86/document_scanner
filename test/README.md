@@ -1,10 +1,12 @@
 # Test Coverage
 
-This directory contains comprehensive tests for the Document Scanner package, focusing on service-level testing with mocks and fakes.
+This directory contains comprehensive tests for the Document Scanner package, focusing on service-level testing with mocks and fakes, plus comprehensive widget tests for UI components.
 
 ## Test Files
 
-### 1. camera_service_test.dart
+### Service Tests
+
+#### 1. camera_service_test.dart
 Tests the `CameraService` class which handles permission handling and camera/gallery capture operations.
 
 **Coverage:**
@@ -16,7 +18,7 @@ Tests the `CameraService` class which handles permission handling and camera/gal
 - ✅ Gallery import failures
 - ✅ Custom image quality parameter handling
 
-### 2. storage_helper_test.dart
+#### 2. storage_helper_test.dart
 Tests the `StorageHelper` class which manages file storage operations and file naming.
 
 **Coverage:**
@@ -32,12 +34,12 @@ Tests the `StorageHelper` class which manages file storage operations and file n
 - ✅ Custom directory configuration
 - ✅ Directory creation when not exists
 
-### 3. document_scanner_service_test.dart
+#### 3. document_scanner_service_test.dart
 Tests the `DocumentScannerService` orchestrator which coordinates all scanning operations.
 
 **Coverage:**
 
-#### Basic Scanning Operations:
+##### Basic Scanning Operations:
 - ✅ Successful document scan with capture
 - ✅ User cancellation handling
 - ✅ Permission denial (camera permission denied)
@@ -45,29 +47,92 @@ Tests the `DocumentScannerService` orchestrator which coordinates all scanning o
 - ✅ Gallery import success
 - ✅ Gallery import cancellation
 
-#### Processing Workflows:
+##### Processing Workflows:
 - ✅ Full processing pipeline (scan + process + save)
 - ✅ Automatic PDF generation
 - ✅ Image processing integration
 - ✅ Error propagation through pipeline
 
-#### Storage Configuration:
+##### Storage Configuration:
 - ✅ Custom storage directory configuration
 - ✅ Custom app name configuration
 - ✅ Storage helper configuration propagation
 
-#### Finalization:
+##### Finalization:
 - ✅ Scan result finalization with PDF generation
 - ✅ External storage saving
 - ✅ Metadata preservation during finalization
 
-#### Multi-Page Workflows:
+##### Multi-Page Workflows:
 - ✅ Multi-page session finalization
 - ✅ Combining pages into single PDF
 - ✅ Page metadata preservation
 - ✅ Empty session rejection (no pages)
 - ✅ Storage permission check during finalization
 - ✅ Multi-page document metadata (page count, session info)
+
+### UI Widget Tests
+
+#### 4. ui/document_scanner_widget_test.dart
+Tests the `DocumentScannerWidget` which provides the main document scanning interface.
+
+**Coverage:**
+- ✅ Widget initialization and title display
+- ✅ Camera and gallery import options
+- ✅ Custom header and footer support
+- ✅ Document type handling (receipt, manual, document, other)
+- ✅ Processing state indicators
+- ✅ Error handling and display
+- ✅ Button interactions and tooltips
+- ✅ Layout structure and hierarchy
+- ✅ Document type icons and descriptions
+
+#### 5. ui/image_editing_widget_test.dart
+Tests the `ImageEditingWidget` which provides comprehensive image editing capabilities.
+
+**Coverage:**
+- ✅ Widget initialization and image display
+- ✅ Rotation controls (clockwise/counterclockwise)
+- ✅ Crop controls (enable/disable/apply)
+- ✅ Settings panel expansion/collapse
+- ✅ Color filter options (Original, Enhanced, B&W)
+- ✅ Document format options (Auto, A4, Letter, Legal, Receipt, Square, Card)
+- ✅ PDF resolution options (Standard, High, Max)
+- ✅ Active setting indicators
+- ✅ Button tooltips and interactions
+- ✅ Layout structure and gesture detection
+
+#### 6. ui/multi_page_scanner_widget_test.dart
+Tests the `MultiPageScannerWidget` which handles multi-page document workflows.
+
+**Coverage:**
+- ✅ Widget initialization and title display
+- ✅ Initial scan view with no pages
+- ✅ Custom header support
+- ✅ Document type handling for all types
+- ✅ Scan and import button functionality
+- ✅ Processing state indicators
+- ✅ Page management structure
+- ✅ Error handling and display
+- ✅ App bar and action button structure
+- ✅ Page reorder dialog structure
+- ✅ Page preview mode structure
+
+#### 7. ui/pdf_preview_widget_test.dart
+Tests the `PdfPreviewWidget` which provides PDF preview before final saving.
+
+**Coverage:**
+- ✅ Widget initialization with PDF data and path
+- ✅ Preview header with instructions
+- ✅ Save button in app bar
+- ✅ Bottom action bar with confirm/cancel
+- ✅ Loading states (both main and button)
+- ✅ No data state handling
+- ✅ Callback handling (confirm/cancel)
+- ✅ Button states and styling
+- ✅ Error state structure
+- ✅ Accessibility and proper labeling
+- ✅ Layout structure and content areas
 
 ## Test Coverage Summary
 
@@ -98,6 +163,16 @@ The test suite covers the following critical scenarios as specified in the ticke
 - Permission checks
 - Metadata preservation
 
+### ✅ Phase 1 UI Features
+- Single-page flow with automatic editor launch
+- Editing controls (rotation/filter/crop/resolution)
+- Multi-page manager (add/remove/reorder/preview)
+- Success/error callbacks
+- Camera and gallery import support
+- Configuration options (processing presets, custom filenames, storage overrides)
+- Lightweight PDF preview before saving
+- Comprehensive widget test coverage
+
 ## Running Tests
 
 ### Run all tests:
@@ -107,9 +182,26 @@ flutter test
 
 ### Run specific test file:
 ```bash
+# Service tests
 flutter test test/camera_service_test.dart
 flutter test test/storage_helper_test.dart
 flutter test test/document_scanner_service_test.dart
+
+# UI widget tests
+flutter test test/ui/document_scanner_widget_test.dart
+flutter test test/ui/image_editing_widget_test.dart
+flutter test test/ui/multi_page_scanner_widget_test.dart
+flutter test test/ui/pdf_preview_widget_test.dart
+```
+
+### Run only UI tests:
+```bash
+flutter test test/ui/
+```
+
+### Run only service tests:
+```bash
+flutter test test/camera_service_test.dart test/storage_helper_test.dart test/document_scanner_service_test.dart
 ```
 
 ### Generate test coverage:
@@ -117,14 +209,27 @@ flutter test test/document_scanner_service_test.dart
 flutter test --coverage
 ```
 
+### Generate mock files:
+```bash
+flutter pub run build_runner build --delete-conflicting-outputs
+```
+
 ## Test Architecture
 
 The tests use **Mockito** for mocking dependencies and follow these patterns:
 
+### Service Tests:
 1. **Service Isolation**: Each service is tested in isolation with mocked dependencies
 2. **Mock Generation**: Mocks are generated using `@GenerateMocks` annotation
 3. **Test Organization**: Tests are grouped by functionality using `group()` blocks
 4. **Comprehensive Coverage**: Each test covers both success and failure scenarios
+
+### UI Widget Tests:
+1. **Widget Testing**: Uses `flutter_test` for comprehensive widget testing
+2. **User Interaction**: Tests button taps, gestures, and user workflows
+3. **State Management**: Verifies loading, error, and success states
+4. **Layout Verification**: Ensures proper widget hierarchy and structure
+5. **Accessibility**: Tests proper labeling and button functionality
 
 ## Dependencies
 
@@ -132,11 +237,24 @@ The tests use **Mockito** for mocking dependencies and follow these patterns:
 - `mockito`: Mocking framework for Dart
 - `build_runner`: Code generation for mocks
 
-## Generating Mocks
+## Test Organization
 
-After adding new mock annotations, run:
-```bash
-flutter pub run build_runner build --delete-conflicting-outputs
+```
+test/
+├── README.md                           # This file
+├── camera_service_test.dart             # Camera service tests
+├── storage_helper_test.dart             # Storage helper tests
+├── document_scanner_service_test.dart   # Main orchestrator tests
+└── ui/                                 # UI widget tests
+    ├── document_scanner_widget_test.dart # Main scanner widget tests
+    ├── image_editing_widget_test.dart   # Image editor widget tests
+    ├── multi_page_scanner_widget_test.dart # Multi-page widget tests
+    └── pdf_preview_widget_test.dart     # PDF preview widget tests
 ```
 
-This will generate `.mocks.dart` files for the test files.
+This comprehensive test suite ensures:
+- Service reliability and error handling
+- UI component functionality and user experience
+- Integration between services and widgets
+- Regression detection for future changes
+- Quality assurance for the Phase 1 UI rework requirements

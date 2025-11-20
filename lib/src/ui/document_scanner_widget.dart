@@ -5,6 +5,7 @@ import '../models/scanned_document.dart';
 import '../models/scan_result.dart';
 import '../services/document_scanner_service.dart';
 import 'image_editing_widget.dart';
+import 'pdf_preview_widget.dart';
 
 /// Main widget for document scanning functionality
 class DocumentScannerWidget extends StatefulWidget {
@@ -430,7 +431,12 @@ class _DocumentScannerWidgetState extends State<DocumentScannerWidget> {
           widget.customFilename,
         );
         
-        widget.onScanComplete(finalResult);
+        // Show PDF preview before completing
+        if (finalResult.success && finalResult.document?.pdfData != null) {
+          await _showPdfPreview(finalResult.document!);
+        } else {
+          widget.onScanComplete(finalResult);
+        }
       } else {
         // User cancelled editing
         widget.onScanComplete(ScanResult.error(
@@ -444,6 +450,31 @@ class _DocumentScannerWidgetState extends State<DocumentScannerWidget> {
         type: ScanResultType.scan,
       ));
     }
+  }
+
+  /// Show PDF preview before final completion
+  Future<void> _showPdfPreview(ScannedDocument document) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PdfPreviewWidget(
+          pdfData: document.pdfData,
+          pdfPath: document.pdfPath,
+          title: 'Document Preview',
+          onConfirm: () {
+            Navigator.pop(context);
+            widget.onScanComplete(ScanResult.success(document: document));
+          },
+          onCancel: () {
+            Navigator.pop(context);
+            widget.onScanComplete(ScanResult.error(
+              error: 'Document cancelled after preview',
+              type: ScanResultType.scan,
+            ));
+          },
+        ),
+      ),
+    );
   }
   
   /// Handle error

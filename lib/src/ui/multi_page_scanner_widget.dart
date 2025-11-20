@@ -6,6 +6,7 @@ import '../models/scan_result.dart';
 import '../services/document_scanner_service.dart';
 import '../services/pdf_generator.dart';
 import 'image_editing_widget.dart';
+import 'pdf_preview_widget.dart';
 
 /// Widget for multi-page document scanning with page management
 class MultiPageScannerWidget extends StatefulWidget {
@@ -582,7 +583,9 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
         print('✅ MULTI-PAGE DEBUG: Document saved successfully');
         print('✅ - pdfPath: ${saveResult.document!.pdfPath}');
         print('✅ - processedPath: ${saveResult.document!.processedPath}');
-        widget.onScanComplete(saveResult);
+        
+        // Show PDF preview before completing
+        await _showPdfPreview(saveResult.document!);
       } else {
         print('❌ MULTI-PAGE DEBUG: Save failed: ${saveResult.error}');
         _handleError('Failed to save multi-page document: ${saveResult.error}');
@@ -592,6 +595,30 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
     } finally {
       setState(() => _isProcessing = false);
     }
+  }
+
+  /// Show PDF preview before final completion
+  Future<void> _showPdfPreview(ScannedDocument document) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PdfPreviewWidget(
+          pdfData: document.pdfData,
+          pdfPath: document.pdfPath,
+          title: 'Multi-Page Document Preview',
+          onConfirm: () {
+            Navigator.pop(context);
+            widget.onScanComplete(ScanResult.success(document: document));
+          },
+          onCancel: () {
+            Navigator.pop(context);
+            // User cancelled after preview, but document is already saved
+            // We still return success since the document exists
+            widget.onScanComplete(ScanResult.success(document: document));
+          },
+        ),
+      ),
+    );
   }
 
   /// Show image editor for a page (both first page and additional pages)
