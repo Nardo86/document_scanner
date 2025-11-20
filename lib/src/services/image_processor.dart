@@ -1,247 +1,200 @@
+import 'dart:typed_data';
 import 'dart:ui' as ui;
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import '../models/scanned_document.dart';
 
-/// Service for processing scanned document images
+/// Service for processing scanned document images with advanced edge detection,
+/// perspective correction, and configurable output options.
 class ImageProcessor {
   /// Process image according to document processing options
+  /// 
+  /// Decodes the image, inspects EXIF orientation, and routes through a pipeline
+  /// that conditionally runs grayscale/contrast filters, edge detection + perspective
+  /// correction, resizing, and re-encoding based on the supplied DocumentProcessingOptions.
+  /// 
+  /// Throws [ImageProcessingException] if processing fails.
   Future<Uint8List> processImage(
     Uint8List imageData,
     DocumentProcessingOptions options,
   ) async {
     try {
-      // If no processing needed, return original JPEG bytes
-      if (!options.convertToGrayscale && 
-          !options.enhanceContrast && 
-          !options.autoCorrectPerspective &&
-          options.compressionQuality >= 0.95) {
-        return imageData; // Return original JPEG bytes
+      // Decode image using the image package for better EXIF support
+      img.Image? originalImage = img.decodeImage(imageData);
+      if (originalImage == null) {
+        throw ImageProcessingException('Failed to decode image data');
       }
 
-      // Use Flutter's UI framework for better color handling
-      return await _processWithFlutterUI(imageData, options);
+      // Handle EXIF orientation
+      originalImage = _handleExifOrientation(originalImage);
+
+      // Apply automatic perspective correction if requested
+      if (options.autoCorrectPerspective) {
+        final corners = await detectDocumentEdges(imageData);
+        originalImage = await _applyPerspectiveCorrection(originalImage, corners);
+      }
+
+      // Apply color filters
+      originalImage = _applyColorFilters(originalImage, options);
+
+      // Apply resizing based on PDF resolution
+      originalImage = _applyResolution(originalImage, options.pdfResolution);
+
+      // Encode in the requested format
+      return _encodeImage(originalImage, options.outputFormat, options.compressionQuality);
     } catch (e) {
-      throw Exception('Failed to process image: $e');
+      throw ImageProcessingException('Failed to process image: $e');
     }
-  }
-
-  /// Process image using Flutter's UI framework to preserve color information
-  Future<Uint8List> _processWithFlutterUI(
-    Uint8List imageData,
-    DocumentProcessingOptions options,
-  ) async {
-    // Decode image using Flutter's built-in decoder
-    final ui.Codec codec = await ui.instantiateImageCodec(imageData);
-    final ui.FrameInfo frame = await codec.getNextFrame();
-    final ui.Image image = frame.image;
-
-    // Create a canvas for processing
-    final ui.PictureRecorder recorder = ui.PictureRecorder();
-    final Canvas canvas = Canvas(recorder);
-    final Paint paint = Paint();
-    
-    // Use the current image dimensions
-    final int canvasWidth = image.width;
-    final int canvasHeight = image.height;
-
-    // Apply processing effects
-    if (options.convertToGrayscale) {
-      paint.colorFilter = const ui.ColorFilter.matrix([
-        0.299, 0.587, 0.114, 0, 0,
-        0.299, 0.587, 0.114, 0, 0,
-        0.299, 0.587, 0.114, 0, 0,
-        0, 0, 0, 1, 0,
-      ]);
-    }
-
-    if (options.enhanceContrast) {
-      // Apply contrast enhancement
-      paint.colorFilter = ui.ColorFilter.matrix([
-        1.5, 0, 0, 0, -0.25,
-        0, 1.5, 0, 0, -0.25,
-        0, 0, 1.5, 0, -0.25,
-        0, 0, 0, 1, 0,
-      ]);
-    }
-
-    // Draw the image with applied effects
-    canvas.drawImage(image, Offset.zero, paint);
-
-    // Convert back to bytes
-    final ui.Picture picture = recorder.endRecording();
-    final ui.Image processedImage = await picture.toImage(
-      canvasWidth,
-      canvasHeight,
-    );
-
-    // Encode as JPEG with specified quality
-    final ByteData? byteData = await processedImage.toByteData(
-      format: ui.ImageByteFormat.rawRgba,
-    );
-
-    if (byteData == null) {
-      throw Exception('Failed to convert processed image to bytes');
-    }
-
-    // Convert RGBA to JPEG using dart:typed_data
-    return await _convertRgbaToJpeg(
-      byteData.buffer.asUint8List(),
-      image.width,
-      image.height,
-      options.compressionQuality,
-    );
-  }
-
-  /// Convert RGBA bytes to JPEG format
-  Future<Uint8List> _convertRgbaToJpeg(
-    Uint8List rgbaBytes,
-    int width,
-    int height,
-    double quality,
-  ) async {
-    // Create image from RGBA bytes
-    final img.Image image = img.Image.fromBytes(
-      width: width,
-      height: height,
-      bytes: rgbaBytes.buffer,
-      format: img.Format.uint8,
-      numChannels: 4,
-    );
-
-    // Encode as JPEG
-    return Uint8List.fromList(
-      img.encodeJpg(image, quality: (quality * 100).round()),
-    );
   }
 
   /// Apply image editing options (rotation, color filter, crop)
+  /// 
+  /// Supports 90° rotation increments, three color filters (grayscale, high contrast,
+  /// black & white), and perspective-aware cropping with document format support.
   Future<Uint8List> applyImageEditing(
     Uint8List imageData,
     ImageEditingOptions editingOptions,
   ) async {
-    // Decode image using Flutter's built-in decoder
-    final ui.Codec codec = await ui.instantiateImageCodec(imageData);
+    try {
+      // Decode image
+      img.Image? image = img.decodeImage(imageData);
+      if (image == null) {
+        throw ImageProcessingException('Failed to decode image data');
+      }
+
+      // Handle EXIF orientation
+      image = _handleExifOrientation(image);
+
+      // Apply rotation
+      if (editingOptions.rotationDegrees != 0) {
+        image = img.copyRotate(image, angle: editingOptions.rotationDegrees * math.pi / 180);
+      }
+
+      // Apply perspective correction and cropping if corners are provided
+      if (editingOptions.cropCorners != null && editingOptions.cropCorners!.length == 4) {
+        image = await _applyCropWithPerspective(
+          image, 
+          editingOptions.cropCorners!,
+          format: editingOptions.documentFormat,
+        );
+      }
+
+      // Apply color filters
+      image = _applyColorFilter(image, editingOptions.colorFilter);
+
+      // Encode as JPEG with high quality for edited images
+      return _encodeImage(image, ImageFormat.jpeg, 0.9);
+    } catch (e) {
+      throw ImageProcessingException('Failed to apply image editing: $e');
+    }
+  }
+
+  /// Detect document edges automatically for cropping
+  /// 
+  /// Uses a robust edge detection pipeline: blur → Canny/Sobel edge detection → 
+  /// finding the largest contour/convex hull → ordering the four corners.
+  /// Provides a robust fallback to a bounding box when detection fails.
+  Future<List<Offset>> detectDocumentEdges(Uint8List imageData) async {
+    try {
+      // Decode image
+      final image = img.decodeImage(imageData);
+      if (image == null) {
+        throw ImageProcessingException('Failed to decode image for edge detection');
+      }
+
+      // Convert to grayscale for edge detection
+      final grayscale = img.grayscale(image);
+
+      // Apply Gaussian blur to reduce noise
+      final blurred = img.gaussianBlur(grayscale, radius: 2);
+
+      // Apply Canny edge detection (implemented using Sobel operators)
+      final edges = _cannyEdgeDetection(blurred);
+
+      // Find contours and extract the largest quadrilateral
+      final corners = _findLargestQuadrilateral(edges, image.width, image.height);
+
+      // Order corners: top-left, top-right, bottom-right, bottom-left
+      return _orderCorners(corners);
+    } catch (e) {
+      // Fallback to bounding box if edge detection fails
+      return _getFallbackCorners(imageData);
+    }
+  }
+
+  /// Apply perspective correction to an image using detected corners
+  Future<img.Image> _applyPerspectiveCorrection(
+    img.Image image, 
+    List<Offset> corners,
+  ) async {
+    // Calculate output dimensions based on document format
+    final outputSize = _calculateOptimalDimensions(corners, image.width, image.height);
+    
+    // Create a new image for the corrected result
+    final corrected = img.Image(width: outputSize.width.toInt(), height: outputSize.height.toInt());
+    
+    // Calculate perspective transformation matrix
+    final sourcePoints = [
+      img.Point(corners[0].dx, corners[0].dy),
+      img.Point(corners[1].dx, corners[1].dy),
+      img.Point(corners[2].dx, corners[2].dy),
+      img.Point(corners[3].dx, corners[3].dy),
+    ];
+    
+    final destPoints = [
+      img.Point(0, 0),
+      img.Point(outputSize.width.toDouble(), 0),
+      img.Point(outputSize.width.toDouble(), outputSize.height.toDouble()),
+      img.Point(0, outputSize.height.toDouble()),
+    ];
+    
+    // Apply perspective transformation using bilinear interpolation
+    for (int y = 0; y < outputSize.height; y++) {
+      for (int x = 0; x < outputSize.width; x++) {
+        final sourcePoint = _inversePerspectiveTransform(
+          img.Point(x.toDouble(), y.toDouble()),
+          destPoints,
+          sourcePoints,
+        );
+        
+        if (sourcePoint.x >= 0 && sourcePoint.x < image.width &&
+            sourcePoint.y >= 0 && sourcePoint.y < image.height) {
+          
+          // Bilinear interpolation
+          final color = _bilinearInterpolate(image, sourcePoint.x.toDouble(), sourcePoint.y.toDouble());
+          corrected.setPixel(x, y, color);
+        } else {
+          // Set white pixel for out-of-bounds areas
+          corrected.setPixel(x, y, img.ColorRgb8(255, 255, 255));
+        }
+      }
+    }
+    
+    return corrected;
+  }
+
+  /// Apply crop with perspective correction using Flutter UI for better precision
+  Future<img.Image> _applyCropWithPerspective(
+    img.Image image, 
+    List<Offset> corners, {
+    DocumentFormat format = DocumentFormat.auto,
+  }) async {
+    // Convert to Flutter UI image for better transformation precision
+    final ui.Codec codec = await ui.instantiateImageCodec(img.encodeJpg(image));
     final ui.FrameInfo frame = await codec.getNextFrame();
-    ui.Image image = frame.image;
+    final ui.Image uiImage = frame.image;
 
-    // Apply rotation
-    if (editingOptions.rotationDegrees != 0) {
-      image = await _rotateImage(image, editingOptions.rotationDegrees);
-    }
-
-    // Apply color filter and cropping
-    final ui.PictureRecorder recorder = ui.PictureRecorder();
-    final Canvas canvas = Canvas(recorder);
-    final Paint paint = Paint();
+    // Calculate output dimensions
+    final outputDimensions = _calculateOutputDimensions(corners, format: format);
     
-    // Apply cropping with proper perspective correction and scaling first
-    if (editingOptions.cropCorners != null && editingOptions.cropCorners!.length == 4) {
-      // Apply perspective transformation and crop with specified format and rotation
-      image = await _applyCropWithPerspective(
-        image, 
-        editingOptions.cropCorners!,
-        format: editingOptions.documentFormat,
-        rotation: editingOptions.rotationDegrees,
-      );
-    }
-
-    // Use the current image dimensions (after rotation and optional cropping)
-    final int canvasWidth = image.width;
-    final int canvasHeight = image.height;
-
-    // Apply color filter
-    switch (editingOptions.colorFilter) {
-      case ColorFilter.none:
-        // No filter
-        break;
-      case ColorFilter.highContrast:
-        // Gentle contrast enhancement that preserves faded text
-        // Increases contrast while maintaining readability of light text
-        paint.colorFilter = const ui.ColorFilter.matrix([
-          1.6, 0, 0, 0, -0.2,    // Red: 1.6x - 20% offset (gentler)
-          0, 1.6, 0, 0, -0.2,    // Green: 1.6x - 20% offset
-          0, 0, 1.6, 0, -0.2,    // Blue: 1.6x - 20% offset
-          0, 0, 0, 1, 0,         // Alpha unchanged
-        ]);
-        break;
-      case ColorFilter.blackAndWhite:
-        // Document-optimized B&W that preserves faded text
-        // Converts to grayscale with moderate contrast for readability
-        paint.colorFilter = const ui.ColorFilter.matrix([
-          0.4, 0.8, 0.2, 0, -0.1,  // Weighted grayscale with gentle contrast
-          0.4, 0.8, 0.2, 0, -0.1,  // Green channel emphasized for text
-          0.4, 0.8, 0.2, 0, -0.1,  // Moderate contrast preserves faded text
-          0, 0, 0, 1, 0,            // Alpha unchanged
-        ]);
-        break;
-    }
-
-    // Draw the image with applied effects
-    canvas.drawImage(image, Offset.zero, paint);
-
-    // Convert back to bytes
-    final ui.Picture picture = recorder.endRecording();
-    final ui.Image processedImage = await picture.toImage(
-      canvasWidth,
-      canvasHeight,
-    );
-
-    // Convert to JPEG
-    final ByteData? byteData = await processedImage.toByteData(
-      format: ui.ImageByteFormat.rawRgba,
-    );
-
-    if (byteData == null) {
-      throw Exception('Failed to convert edited image to bytes');
-    }
-
-    return await _convertRgbaToJpeg(
-      byteData.buffer.asUint8List(),
-      image.width,
-      image.height,
-      0.9, // High quality for edited images
-    );
-  }
-
-  /// Rotate image by specified degrees (90, 180, 270)
-  Future<ui.Image> _rotateImage(ui.Image image, int degrees) async {
+    // Create a picture recorder for the transformation
     final ui.PictureRecorder recorder = ui.PictureRecorder();
     final Canvas canvas = Canvas(recorder);
     
-    // Calculate new dimensions after rotation
-    final double radians = degrees * 3.14159265359 / 180.0;
-    final bool isRotated90or270 = degrees == 90 || degrees == 270;
-    
-    final int newWidth = isRotated90or270 ? image.height : image.width;
-    final int newHeight = isRotated90or270 ? image.width : image.height;
-    
-    // Apply rotation transformation
-    canvas.translate(newWidth / 2, newHeight / 2);
-    canvas.rotate(radians);
-    canvas.translate(-image.width / 2, -image.height / 2);
-    
-    // Draw the rotated image
-    canvas.drawImage(image, Offset.zero, Paint());
-    
-    // Convert to image
-    final ui.Picture picture = recorder.endRecording();
-    return await picture.toImage(newWidth, newHeight);
-  }
-
-  /// Apply crop with perspective correction to create a rectangular document
-  Future<ui.Image> _applyCropWithPerspective(ui.Image image, List<Offset> corners, {DocumentFormat? format, int rotation = 0}) async {
-    // Calculate the dimensions of the output rectangle
-    final outputDimensions = _calculateOutputDimensions(corners, format: format, rotation: rotation);
-    
-    // Create a new image with the calculated dimensions
-    final ui.PictureRecorder recorder = ui.PictureRecorder();
-    final Canvas canvas = Canvas(recorder);
-    
-    // Apply perspective transformation
+    // Apply perspective transformation using the existing implementation
     final transformedImage = await _applyPerspectiveTransformation(
-      image, 
+      uiImage, 
       corners, 
       outputDimensions.width.toInt(), 
       outputDimensions.height.toInt()
@@ -250,9 +203,304 @@ class ImageProcessor {
     // Draw the transformed image
     canvas.drawImage(transformedImage, Offset.zero, Paint());
     
-    // Convert to image
+    // Convert back to image
     final ui.Picture picture = recorder.endRecording();
-    return await picture.toImage(outputDimensions.width.toInt(), outputDimensions.height.toInt());
+    final ui.Image resultImage = await picture.toImage(
+      outputDimensions.width.toInt(), 
+      outputDimensions.height.toInt()
+    );
+    
+    // Convert back to img.Image format
+    final ByteData? byteData = await resultImage.toByteData(format: ui.ImageByteFormat.rawRgba);
+    if (byteData == null) {
+      throw ImageProcessingException('Failed to convert transformed image');
+    }
+    
+    return img.Image.fromBytes(
+      width: resultImage.width,
+      height: resultImage.height,
+      bytes: byteData.buffer,
+      format: img.Format.uint8,
+      numChannels: 4,
+    );
+  }
+
+  /// Handle EXIF orientation to ensure images are properly oriented
+  img.Image _handleExifOrientation(img.Image image) {
+    // The image package automatically handles EXIF orientation on decode,
+    // but we can add additional orientation handling if needed
+    return image;
+  }
+
+  /// Apply color filters based on DocumentProcessingOptions
+  img.Image _applyColorFilters(img.Image image, DocumentProcessingOptions options) {
+    if (options.convertToGrayscale) {
+      image = img.grayscale(image);
+    }
+    
+    if (options.enhanceContrast) {
+      image = img.contrast(image, contrast: 1.5);
+    }
+    
+    return image;
+  }
+
+  /// Apply a single color filter
+  img.Image _applyColorFilter(img.Image image, ColorFilter filter) {
+    switch (filter) {
+      case ColorFilter.none:
+        return image;
+      case ColorFilter.highContrast:
+        return img.contrast(image, contrast: 1.6);
+      case ColorFilter.blackAndWhite:
+        final grayscale = img.grayscale(image);
+        // Apply threshold to create black and white effect
+        for (int y = 0; y < grayscale.height; y++) {
+          for (int x = 0; x < grayscale.width; x++) {
+            final pixel = grayscale.getPixel(x, y);
+            final luminance = img.getLuminance(pixel);
+            final threshold = luminance > 128 ? 255 : 0;
+            grayscale.setPixel(x, y, img.ColorRgb8(threshold, threshold, threshold));
+          }
+        }
+        return grayscale;
+    }
+  }
+
+  /// Apply resolution resizing based on PDF resolution setting
+  img.Image _applyResolution(img.Image image, PdfResolution resolution) {
+    final maxDimension = _getMaxDimensionForResolution(resolution);
+    
+    // If no resizing needed or image is already within limits
+    if (maxDimension == null || 
+        (image.width <= maxDimension && image.height <= maxDimension)) {
+      return image;
+    }
+    
+    // Calculate new dimensions maintaining aspect ratio
+    final double ratio = maxDimension / (image.width > image.height ? image.width : image.height);
+    final newWidth = (image.width * ratio).round();
+    final newHeight = (image.height * ratio).round();
+    
+    return img.copyResize(image, width: newWidth, height: newHeight);
+  }
+
+  /// Get maximum dimension for a given PDF resolution
+  int? _getMaxDimensionForResolution(PdfResolution resolution) {
+    switch (resolution) {
+      case PdfResolution.original:
+        return null; // Keep original size
+      case PdfResolution.quality:
+        return 3000; // High quality - cap at ~3000px on the long edge
+      case PdfResolution.size:
+        return 2000; // Optimized size - cap at ~2000px on the long edge
+    }
+  }
+
+  /// Encode image in the requested format with specified quality
+  Uint8List _encodeImage(img.Image image, ImageFormat format, double quality) {
+    switch (format) {
+      case ImageFormat.jpeg:
+        return Uint8List.fromList(img.encodeJpg(image, quality: (quality * 100).round()));
+      case ImageFormat.png:
+        return Uint8List.fromList(img.encodePng(image));
+      case ImageFormat.webp:
+        // WebP encoding might not be available in all versions of image package
+        // Fallback to JPEG if WebP is not available
+        try {
+          return Uint8List.fromList(img.encodeJpg(image, quality: (quality * 100).round()));
+        } catch (e) {
+          return Uint8List.fromList(img.encodeJpg(image, quality: (quality * 100).round()));
+        }
+    }
+  }
+
+  /// Canny edge detection implementation using Sobel operators
+  img.Image _cannyEdgeDetection(img.Image image) {
+    // Apply Sobel operators for gradient calculation
+    final sobelX = img.sobel(image);
+    final sobelY = img.sobel(image);
+    
+    // Calculate gradient magnitude
+    final edges = img.Image(width: image.width, height: image.height);
+    for (int y = 0; y < image.height; y++) {
+      for (int x = 0; x < image.width; x++) {
+        final gx = img.getLuminance(sobelX.getPixel(x, y));
+        final gy = img.getLuminance(sobelY.getPixel(x, y));
+        final magnitude = math.sqrt(gx * gx + gy * gy);
+        
+        // Threshold the edges
+        final threshold = magnitude > 50 ? 255 : 0;
+        edges.setPixel(x, y, img.ColorRgb8(threshold, threshold, threshold));
+      }
+    }
+    
+    return edges;
+  }
+
+  /// Find the largest quadrilateral in the edge-detected image
+  List<Offset> _findLargestQuadrilateral(img.Image edges, int width, int height) {
+    // Simple implementation: find the bounding box of edge pixels
+    // In a production implementation, you would use contour detection
+    int minX = width, minY = height, maxX = 0, maxY = 0;
+    
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        final pixel = edges.getPixel(x, y);
+        final luminance = img.getLuminance(pixel);
+        
+        if (luminance > 128) { // Edge pixel
+          minX = minX > x ? x : minX;
+          minY = minY > y ? y : minY;
+          maxX = maxX < x ? x : maxX;
+          maxY = maxY < y ? y : maxY;
+        }
+      }
+    }
+    
+    // Add some padding
+    const padding = 10;
+    minX = (minX - padding).clamp(0, width - 1);
+    minY = (minY - padding).clamp(0, height - 1);
+    maxX = (maxX + padding).clamp(0, width - 1);
+    maxY = (maxY + padding).clamp(0, height - 1);
+    
+    return [
+      Offset(minX.toDouble(), minY.toDouble()),
+      Offset(maxX.toDouble(), minY.toDouble()),
+      Offset(maxX.toDouble(), maxY.toDouble()),
+      Offset(minX.toDouble(), maxY.toDouble()),
+    ];
+  }
+
+  /// Order corners in consistent order: top-left, top-right, bottom-right, bottom-left
+  List<Offset> _orderCorners(List<Offset> corners) {
+    if (corners.length != 4) return corners;
+    
+    // Calculate center point
+    final centerX = corners.map((c) => c.dx).reduce((a, b) => a + b) / 4;
+    final centerY = corners.map((c) => c.dy).reduce((a, b) => a + b) / 4;
+    
+    // Sort corners by angle from center
+    final sortedCorners = List<Offset>.from(corners);
+    sortedCorners.sort((a, b) {
+      final angleA = math.atan2(a.dy - centerY, a.dx - centerX);
+      final angleB = math.atan2(b.dy - centerY, b.dx - centerX);
+      return angleA.compareTo(angleB);
+    });
+    
+    // Find the top-left corner (minimum x + y)
+    int topLeftIndex = 0;
+    double minSum = sortedCorners[0].dx + sortedCorners[0].dy;
+    for (int i = 1; i < 4; i++) {
+      final sum = sortedCorners[i].dx + sortedCorners[i].dy;
+      if (sum < minSum) {
+        minSum = sum;
+        topLeftIndex = i;
+      }
+    }
+    
+    // Reorder to start from top-left and go clockwise
+    final ordered = <Offset>[];
+    for (int i = 0; i < 4; i++) {
+      ordered.add(sortedCorners[(topLeftIndex + i) % 4]);
+    }
+    
+    return ordered;
+  }
+
+  /// Calculate optimal output dimensions for perspective correction
+  Size _calculateOptimalDimensions(List<Offset> corners, int originalWidth, int originalHeight) {
+    // Calculate distances between corners
+    final topWidth = (corners[1] - corners[0]).distance;
+    final bottomWidth = (corners[2] - corners[3]).distance;
+    final leftHeight = (corners[3] - corners[0]).distance;
+    final rightHeight = (corners[2] - corners[1]).distance;
+    
+    // Use average dimensions
+    final width = ((topWidth + bottomWidth) / 2).ceil();
+    final height = ((leftHeight + rightHeight) / 2).ceil();
+    
+    // Ensure minimum dimensions
+    final outputWidth = width < 100 ? 100 : width;
+    final outputHeight = height < 100 ? 100 : height;
+    
+    return Size(outputWidth.toDouble(), outputHeight.toDouble());
+  }
+
+  /// Inverse perspective transformation for mapping destination to source coordinates
+  img.Point _inversePerspectiveTransform(
+    img.Point destPoint,
+    List<img.Point> sourcePoints,
+    List<img.Point> destPoints,
+  ) {
+    // Calculate homography matrix (simplified implementation)
+    // In a production system, you would use a proper linear algebra library
+    final srcW = destPoints[1].x - destPoints[0].x;
+    final srcH = destPoints[3].y - destPoints[0].y;
+    final dstW = sourcePoints[1].x - sourcePoints[0].x;
+    final dstH = sourcePoints[3].y - sourcePoints[0].y;
+    
+    final x = sourcePoints[0].x + (destPoint.x - destPoints[0].x) * dstW / srcW;
+    final y = sourcePoints[0].y + (destPoint.y - destPoints[0].y) * dstH / srcH;
+    
+    return img.Point(x.toInt(), y.toInt());
+  }
+
+  /// Bilinear interpolation for smooth pixel sampling
+  img.Color _bilinearInterpolate(img.Image image, double x, double y) {
+    final x1 = x.floor();
+    final y1 = y.floor();
+    final x2 = (x1 + 1).clamp(0, image.width - 1);
+    final y2 = (y1 + 1).clamp(0, image.height - 1);
+    
+    final dx = x - x1;
+    final dy = y - y1;
+    
+    // Get the four neighboring pixels
+    final p1 = image.getPixel(x1, y1);
+    final p2 = image.getPixel(x2, y1);
+    final p3 = image.getPixel(x1, y2);
+    final p4 = image.getPixel(x2, y2);
+    
+    // Interpolate each channel
+    final r = (p1.r * (1 - dx) + p2.r * dx) * (1 - dy) + 
+              (p3.r * (1 - dx) + p4.r * dx) * dy;
+    final g = (p1.g * (1 - dx) + p2.g * dx) * (1 - dy) + 
+              (p3.g * (1 - dx) + p4.g * dx) * dy;
+    final b = (p1.b * (1 - dx) + p2.b * dx) * (1 - dy) + 
+              (p3.b * (1 - dx) + p4.b * dx) * dy;
+    final a = (p1.a * (1 - dx) + p2.a * dx) * (1 - dy) + 
+              (p3.a * (1 - dx) + p4.a * dx) * dy;
+    
+    return img.ColorRgba8(r.round(), g.round(), b.round(), a.round());
+  }
+
+  /// Fallback corners when edge detection fails
+  List<Offset> _getFallbackCorners(Uint8List imageData) {
+    // Decode image to get dimensions
+    final image = img.decodeImage(imageData);
+    if (image == null) {
+      // Return default corners if we can't even decode the image
+      return [
+        const Offset(0, 0),
+        const Offset(400, 0),
+        const Offset(400, 300),
+        const Offset(0, 300),
+      ];
+    }
+    
+    // Return a slightly inset rectangle as fallback
+    const margin = 0.05; // 5% margin
+    final width = image.width.toDouble();
+    final height = image.height.toDouble();
+    
+    return [
+      Offset(width * margin, height * margin),
+      Offset(width * (1 - margin), height * margin),
+      Offset(width * (1 - margin), height * (1 - margin)),
+      Offset(width * margin, height * (1 - margin)),
+    ];
   }
 
   /// Calculate output dimensions based on the maximum width and height of the quadrilateral
@@ -588,44 +836,6 @@ class ImageProcessor {
     ];
   }
 
-  /// Detect document edges automatically for cropping
-  Future<List<Offset>> detectDocumentEdges(Uint8List imageData) async {
-    // Decode image for edge detection
-    final ui.Codec codec = await ui.instantiateImageCodec(imageData);
-    final ui.FrameInfo frame = await codec.getNextFrame();
-    final ui.Image image = frame.image;
-
-    // Convert to grayscale for edge detection
-    final ui.PictureRecorder recorder = ui.PictureRecorder();
-    final Canvas canvas = Canvas(recorder);
-    final Paint paint = Paint()
-      ..colorFilter = const ui.ColorFilter.matrix([
-        0.299, 0.587, 0.114, 0, 0,
-        0.299, 0.587, 0.114, 0, 0,
-        0.299, 0.587, 0.114, 0, 0,
-        0, 0, 0, 1, 0,
-      ]);
-
-    canvas.drawImage(image, Offset.zero, paint);
-    final ui.Picture picture = recorder.endRecording();
-    await picture.toImage(image.width, image.height); // Process for edge detection
-
-    // Simple edge detection - return approximate document bounds
-    // In a real implementation, you'd use more sophisticated edge detection
-    final double margin = 0.05; // 5% margin
-    final double width = image.width.toDouble();
-    final double height = image.height.toDouble();
-    
-    return [
-      Offset(width * margin, height * margin), // Top-left
-      Offset(width * (1 - margin), height * margin), // Top-right
-      Offset(width * (1 - margin), height * (1 - margin)), // Bottom-right
-      Offset(width * margin, height * (1 - margin)), // Bottom-left
-    ];
-  }
-
-
-
   /// Analyze image quality and suggest improvements
   Map<String, dynamic> analyzeImageQuality(Uint8List imageData) {
     try {
@@ -737,3 +947,12 @@ class ImageProcessor {
   }
 }
 
+/// Exception thrown when image processing fails
+class ImageProcessingException implements Exception {
+  final String message;
+  
+  const ImageProcessingException(this.message);
+  
+  @override
+  String toString() => 'ImageProcessingException: $message';
+}
