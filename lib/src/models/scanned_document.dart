@@ -38,8 +38,8 @@ class ImageEditingOptions {
   /// Color filter to apply
   final ColorFilter colorFilter;
 
-  /// Four corner points defining the crop area (optional)
-  /// In actual use, these are ui.Offset from Flutter
+  /// Four corner points defining the crop area (optional).
+  /// Each element represents a 2D point with dx (x-coordinate) and dy (y-coordinate) properties.
   final List<dynamic>? cropCorners;
 
   /// Document format determining aspect ratio for auto-cropping
@@ -278,7 +278,8 @@ class ScannedDocument {
   /// ```
   factory ScannedDocument.fromJson(Map<String, dynamic> json) {
     final pages = (json['pages'] as List<dynamic>?)
-            ?.map((p) => DocumentPage.fromJson(p as Map<String, dynamic>))
+            ?.map((p) => DocumentPage.fromJson(
+                Map<String, dynamic>.from(p as Map<dynamic, dynamic>)))
             .toList() ??
         [];
 
@@ -292,8 +293,8 @@ class ScannedDocument {
       processedPath: json['processedPath'] as String?,
       pdfPath: json['pdfPath'] as String?,
       scanTime: DateTime.parse(json['scanTime'] as String),
-      processingOptions:
-          DocumentProcessingOptions.fromJson(json['processingOptions'] as Map<String, dynamic>),
+      processingOptions: DocumentProcessingOptions.fromJson(
+          Map<String, dynamic>.from(json['processingOptions'] as Map<dynamic, dynamic>)),
       metadata: json['metadata'] as Map<String, dynamic>? ?? {},
       pages: pages,
       isMultiPage: json['isMultiPage'] as bool? ?? (pages.length > 1),

@@ -168,17 +168,21 @@ class ScanResult {
   /// final result = ScanResult.fromJson(jsonMap);
   /// ```
   factory ScanResult.fromJson(Map<String, dynamic> json) {
+    final metadata = json['metadata'];
     return ScanResult(
       success: json['success'] as bool,
       document: json['document'] != null
-          ? ScannedDocument.fromJson(json['document'] as Map<String, dynamic>)
+          ? ScannedDocument.fromJson(
+              Map<String, dynamic>.from(json['document'] as Map<dynamic, dynamic>))
           : null,
       error: json['error'] as String?,
       type: ScanResultType.values.firstWhere(
         (e) => e.toString() == json['type'],
         orElse: () => ScanResultType.scan,
       ),
-      metadata: json['metadata'] as Map<String, dynamic>? ?? {},
+      metadata: metadata is Map
+          ? Map<String, dynamic>.from(metadata)
+          : {},
     );
   }
 }
@@ -291,6 +295,7 @@ class QRScanResult extends ScanResult {
   /// final result = QRScanResult.fromJson(jsonMap);
   /// ```
   factory QRScanResult.fromJson(Map<String, dynamic> json) {
+    final metadata = json['metadata'];
     return QRScanResult(
       success: json['success'] as bool,
       qrData: json['qrData'] as String,
@@ -299,10 +304,13 @@ class QRScanResult extends ScanResult {
         orElse: () => QRContentType.unknown,
       ),
       document: json['document'] != null
-          ? ScannedDocument.fromJson(json['document'] as Map<String, dynamic>)
+          ? ScannedDocument.fromJson(
+              Map<String, dynamic>.from(json['document'] as Map<dynamic, dynamic>))
           : null,
       error: json['error'] as String?,
-      metadata: json['metadata'] as Map<String, dynamic>? ?? {},
+      metadata: metadata is Map
+          ? Map<String, dynamic>.from(metadata)
+          : {},
     );
   }
 }

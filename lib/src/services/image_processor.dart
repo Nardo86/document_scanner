@@ -140,9 +140,11 @@ class ImageProcessor {
     // Apply cropping with proper perspective correction and scaling first
     if (editingOptions.cropCorners != null && editingOptions.cropCorners!.length == 4) {
       // Apply perspective transformation and crop with specified format and rotation
+      // Cast cropCorners to List<Offset> since they come from ui.Offset objects
+      final offsets = editingOptions.cropCorners!.cast<Offset>();
       image = await _applyCropWithPerspective(
         image, 
-        editingOptions.cropCorners!,
+        offsets,
         format: editingOptions.documentFormat,
         rotation: editingOptions.rotationDegrees,
       );
@@ -232,7 +234,7 @@ class ImageProcessor {
   }
 
   /// Apply crop with perspective correction to create a rectangular document
-  Future<ui.Image> _applyCropWithPerspective(ui.Image image, List<dynamic> corners, {DocumentFormat? format, int rotation = 0}) async {
+  Future<ui.Image> _applyCropWithPerspective(ui.Image image, List<Offset> corners, {DocumentFormat? format, int rotation = 0}) async {
     // Calculate the dimensions of the output rectangle
     final outputDimensions = _calculateOutputDimensions(corners, format: format, rotation: rotation);
     
@@ -257,7 +259,7 @@ class ImageProcessor {
   }
 
   /// Calculate output dimensions based on the maximum width and height of the quadrilateral
-  Size _calculateOutputDimensions(List<dynamic> corners, {DocumentFormat? format, int rotation = 0}) {
+  Size _calculateOutputDimensions(List<Offset> corners, {DocumentFormat? format, int rotation = 0}) {
     if (corners.length != 4) {
       return const Size(400, 300); // Default fallback
     }
@@ -357,7 +359,7 @@ class ImageProcessor {
   /// This replaces the previous bilinear interpolation with proper perspective correction
   Future<ui.Image> _applyPerspectiveTransformation(
     ui.Image sourceImage, 
-    List<dynamic> sourceCorners, 
+    List<Offset> sourceCorners, 
     int outputWidth, 
     int outputHeight
   ) async {
@@ -381,7 +383,7 @@ class ImageProcessor {
     ];
     
     // Calculate inverse perspective transformation matrix (dest -> source)
-    final matrix = _calculatePerspectiveMatrix(destCorners as List<dynamic>, sourceCorners);
+    final matrix = _calculatePerspectiveMatrix(destCorners, sourceCorners);
     
     // Apply transformation for each pixel in the output image
     for (int y = 0; y < outputHeight; y++) {
@@ -430,7 +432,7 @@ class ImageProcessor {
   }
 
   /// Calculate perspective transformation matrix (homography matrix for true perspective correction)
-  List<double> _calculatePerspectiveMatrix(List<dynamic> source, List<Offset> dest) {
+  List<double> _calculatePerspectiveMatrix(List<Offset> source, List<Offset> dest) {
     // Calculate homography matrix for true perspective transformation
     // This solves the system of equations to find the 3x3 transformation matrix
     
