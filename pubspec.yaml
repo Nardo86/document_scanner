@@ -39,6 +39,8 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  mockito: ^5.4.4
+  build_runner: ^2.4.9
 
 # AIDEV-NOTE: This package is designed to be reusable across multiple projects
 # Core functionality: Document scanning, image processing, PDF generation, QR scanning
