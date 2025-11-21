@@ -41,19 +41,15 @@ class _CapabilitiesLabScreenState extends State<CapabilitiesLabScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Capabilities Lab'),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          const SectionHeader(
-            icon: Icons.science,
-            title: 'Toggle processing options on the fly',
-            subtitle: 'Directly calls DocumentScannerService.scan/importWithProcessing to bypass the UI widgets.',
-          ),
-          const SizedBox(height: 12),
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const SectionHeader(
+          icon: Icons.science,
+          title: 'Capabilities Lab',
+          subtitle: 'Toggle processing options on the fly. Directly calls DocumentScannerService.scan/importWithProcessing to bypass the UI widgets.',
+        ),
+        const SizedBox(height: 12),
           if (_error != null)
             Card(
               color: Theme.of(context).colorScheme.errorContainer,
@@ -99,9 +95,8 @@ class _CapabilitiesLabScreenState extends State<CapabilitiesLabScreen> {
               title: 'Experiment results appear here',
               message: 'Capture via camera or import a file to see how each toggle affects the output.',
             ),
-          const SizedBox(height: 32),
-        ],
-      ),
+        const SizedBox(height: 32),
+      ],
     );
   }
 
@@ -310,8 +305,31 @@ class _CapabilitiesLabScreenState extends State<CapabilitiesLabScreen> {
             label: const Text('Import from gallery'),
           ),
         ),
+        const SizedBox(width: 12),
+        IconButton.outlined(
+          onPressed: _isProcessing ? null : _resetToDefaults,
+          icon: const Icon(Icons.refresh),
+          tooltip: 'Reset all options to defaults',
+        ),
       ],
     );
+  }
+
+  void _resetToDefaults() {
+    setState(() {
+      _documentType = DocumentType.document;
+      _grayscale = true;
+      _contrast = true;
+      _perspective = true;
+      _generatePdf = true;
+      _saveImage = false;
+      _compression = 0.85;
+      _resolution = PdfResolution.quality;
+      _format = DocumentFormat.auto;
+      _filenameController.clear();
+      _lastResult = null;
+      _error = null;
+    });
   }
 
   Future<void> _runExperiment({required bool useCamera}) async {

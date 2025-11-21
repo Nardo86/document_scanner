@@ -33,60 +33,55 @@ class _MultiPageScreenState extends State<MultiPageScreen> {
   @override
   Widget build(BuildContext context) {
     final doc = _lastResult?.document;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Multi-Page Session'),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          const SectionHeader(
-            icon: Icons.menu_book_outlined,
-            title: 'Full multi-page workflow',
-            subtitle: 'Starts MultiPageScannerWidget with page grid, preview mode, reorder dialog, and PDF preview.',
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const SectionHeader(
+          icon: Icons.menu_book_outlined,
+          title: 'Multi-Page Session',
+          subtitle: 'Starts MultiPageScannerWidget with page grid, preview mode, reorder dialog, and PDF preview.',
+        ),
+        const SizedBox(height: 12),
+        _buildTypeSelector(),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _filenameController,
+          decoration: const InputDecoration(
+            labelText: 'Custom filename (defaults to metadata naming)',
+            prefixIcon: Icon(Icons.title),
           ),
-          const SizedBox(height: 12),
-          _buildTypeSelector(),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _filenameController,
-            decoration: const InputDecoration(
-              labelText: 'Custom filename (defaults to metadata naming)',
-              prefixIcon: Icon(Icons.title),
-            ),
+        ),
+        const SizedBox(height: 16),
+        FilledButton.icon(
+          onPressed: _isLaunching ? null : _launchMultiPageScanner,
+          icon: _isLaunching
+              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Icon(Icons.play_arrow),
+          label: Text(_isLaunching ? 'Launching…' : 'Start multi-page session'),
+        ),
+        const SizedBox(height: 24),
+        if (_lastResult != null) ...[
+          ScanResultDetails(
+            result: _lastResult!,
+            showPreviewButton: true,
+            onPreview: () {
+              if (doc != null) {
+                _openPreview(doc);
+              }
+            },
           ),
-          const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: _isLaunching ? null : _launchMultiPageScanner,
-            icon: _isLaunching
-                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.play_arrow),
-            label: Text(_isLaunching ? 'Launching…' : 'Start multi-page session'),
-          ),
-          const SizedBox(height: 24),
-          if (_lastResult != null) ...[
-            ScanResultDetails(
-              result: _lastResult!,
-              showPreviewButton: true,
-              onPreview: () {
-                if (doc != null) {
-                  _openPreview(doc);
-                }
-              },
-            ),
-            if (doc != null && doc.pages.isNotEmpty) ...[
-              const SizedBox(height: 24),
-              _buildPagesSummary(doc),
-            ],
+          if (doc != null && doc.pages.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            _buildPagesSummary(doc),
+          ],
           ] else
             const EmptyState(
               icon: Icons.library_books_outlined,
               title: 'No sessions yet',
               message: 'Capture 2+ pages to highlight the session timeline and PDF export.',
             ),
-          const SizedBox(height: 32),
-        ],
-      ),
+        const SizedBox(height: 32),
+      ],
     );
   }
 

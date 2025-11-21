@@ -63,41 +63,37 @@ class _SinglePageScreenState extends State<SinglePageScreen> {
     final state = ShowcaseStateScope.watch(context);
     final resolvedFilename = state.resolveFilename(_filenameController.text);
     final isBusy = _isGuidedLaunching || _isCameraProcessing || _isGalleryProcessing;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Single Page Capture'),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          const SectionHeader(
-            icon: Icons.document_scanner,
-            title: 'Guided scanner experience',
-            subtitle: 'Uses DocumentScannerWidget → ImageEditingWidget → PdfPreviewWidget, then surfaces metadata.',
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const SectionHeader(
+          icon: Icons.document_scanner,
+          title: 'Single Page Capture',
+          subtitle: 'Uses DocumentScannerWidget → ImageEditingWidget → PdfPreviewWidget, then surfaces metadata.',
+        ),
+        const SizedBox(height: 12),
+        _NamingStrategyBanner(
+          resolvedFilename: resolvedFilename,
+          storageDirectory: state.customDirectory ?? '/Documents/${state.appName}',
+        ),
+        const SizedBox(height: 12),
+        _buildTypeSelector(),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _filenameController,
+          decoration: const InputDecoration(
+            labelText: 'Custom filename (overrides default for this run)',
+            prefixIcon: Icon(Icons.drive_file_rename_outline),
           ),
-          const SizedBox(height: 12),
-          _NamingStrategyBanner(
-            resolvedFilename: resolvedFilename,
-            storageDirectory: state.customDirectory ?? '/Documents/${state.appName}',
-          ),
-          const SizedBox(height: 12),
-          _buildTypeSelector(),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _filenameController,
-            decoration: const InputDecoration(
-              labelText: 'Custom filename (overrides default for this run)',
-              prefixIcon: Icon(Icons.drive_file_rename_outline),
-            ),
-          ),
-          const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: isBusy ? null : _launchGuidedScanner,
-            icon: _isGuidedLaunching
-                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.play_arrow),
-            label: Text(_isGuidedLaunching ? 'Launching…' : 'Launch guided scanner'),
-          ),
+        ),
+        const SizedBox(height: 16),
+        FilledButton.icon(
+          onPressed: isBusy ? null : _launchGuidedScanner,
+          icon: _isGuidedLaunching
+              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Icon(Icons.play_arrow),
+          label: Text(_isGuidedLaunching ? 'Launching…' : 'Launch guided scanner'),
+        ),
           const SizedBox(height: 16),
           _buildQuickActions(),
           const SizedBox(height: 24),
@@ -120,7 +116,6 @@ class _SinglePageScreenState extends State<SinglePageScreen> {
             ),
           const SizedBox(height: 32),
         ],
-      ),
     );
   }
 
