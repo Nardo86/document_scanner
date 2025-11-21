@@ -146,58 +146,6 @@ class ImageProcessor {
     }
   }
 
-  /// Apply perspective correction to an image using detected corners
-  // ignore: unused_element
-  Future<img.Image> _applyPerspectiveCorrection(
-    img.Image image, 
-    List<Offset> corners,
-  ) async {
-    // Calculate output dimensions based on document format
-    final outputSize = _calculateOptimalDimensions(corners, image.width, image.height);
-    
-    // Create a new image for the corrected result
-    final corrected = img.Image(width: outputSize.width.toInt(), height: outputSize.height.toInt());
-    
-    // Calculate perspective transformation matrix
-    final sourcePoints = [
-      img.Point(corners[0].dx, corners[0].dy),
-      img.Point(corners[1].dx, corners[1].dy),
-      img.Point(corners[2].dx, corners[2].dy),
-      img.Point(corners[3].dx, corners[3].dy),
-    ];
-    
-    final destPoints = [
-      img.Point(0, 0),
-      img.Point(outputSize.width.toDouble(), 0),
-      img.Point(outputSize.width.toDouble(), outputSize.height.toDouble()),
-      img.Point(0, outputSize.height.toDouble()),
-    ];
-    
-    // Apply perspective transformation using bilinear interpolation
-    for (int y = 0; y < outputSize.height; y++) {
-      for (int x = 0; x < outputSize.width; x++) {
-        final sourcePoint = _inversePerspectiveTransform(
-          img.Point(x.toDouble(), y.toDouble()),
-          destPoints,
-          sourcePoints,
-        );
-        
-        if (sourcePoint.x >= 0 && sourcePoint.x < image.width &&
-            sourcePoint.y >= 0 && sourcePoint.y < image.height) {
-          
-          // Bilinear interpolation
-          final color = _bilinearInterpolate(image, sourcePoint.x.toDouble(), sourcePoint.y.toDouble());
-          corrected.setPixel(x, y, color);
-        } else {
-          // Set white pixel for out-of-bounds areas
-          corrected.setPixel(x, y, img.ColorRgb8(255, 255, 255));
-        }
-      }
-    }
-    
-    return corrected;
-  }
-
   /// Apply crop with perspective correction using Flutter UI for better precision
   Future<img.Image> _applyCropWithPerspective(
     img.Image image, 
@@ -253,22 +201,6 @@ class ImageProcessor {
   img.Image _handleExifOrientation(img.Image image) {
     // The image package automatically handles EXIF orientation on decode,
     // but we can add additional orientation handling if needed
-    return image;
-  }
-
-  /// Apply color filters based on DocumentProcessingOptions
-  // ignore: unused_element
-  img.Image _applyColorFilters(img.Image image, DocumentProcessingOptions options) {
-    if (options.convertToGrayscale) {
-      // Use proper Otsu thresholding for black & white conversion
-      image = _applyBlackAndWhiteFilter(image);
-    }
-    
-    if (options.enhanceContrast) {
-      // Use histogram equalization for enhanced contrast
-      image = _applyEnhancedFilter(image);
-    }
-    
     return image;
   }
 
@@ -479,36 +411,7 @@ class ImageProcessor {
     return lookup;
   }
 
-  /// Apply resolution resizing based on PDF resolution setting
-  // ignore: unused_element
-  img.Image _applyResolution(img.Image image, PdfResolution resolution) {
-    final maxDimension = _getMaxDimensionForResolution(resolution);
-    
-    // If no resizing needed or image is already within limits
-    if (maxDimension == null || 
-        (image.width <= maxDimension && image.height <= maxDimension)) {
-      return image;
-    }
-    
-    // Calculate new dimensions maintaining aspect ratio
-    final double ratio = maxDimension / (image.width > image.height ? image.width : image.height);
-    final newWidth = (image.width * ratio).round();
-    final newHeight = (image.height * ratio).round();
-    
-    return img.copyResize(image, width: newWidth, height: newHeight);
-  }
-
-  /// Get maximum dimension for a given PDF resolution
-  int? _getMaxDimensionForResolution(PdfResolution resolution) {
-    switch (resolution) {
-      case PdfResolution.original:
-        return null; // Keep original size
-      case PdfResolution.quality:
-        return 3000; // High quality - cap at ~3000px on the long edge
-      case PdfResolution.size:
-        return 2000; // Optimized size - cap at ~2000px on the long edge
-    }
-  }
+ 
 
   /// Encode image in the requested format with specified quality
   Uint8List _encodeImage(img.Image image, ImageFormat format, double quality) {
@@ -528,170 +431,6 @@ class ImageProcessor {
     }
   }
 
-  /// Canny edge detection implementation using Sobel operators
-  // ignore: unused_element
-  img.Image _cannyEdgeDetection(img.Image image) {
-    // Apply Sobel operators for gradient calculation
-    final sobelX = img.sobel(image);
-    final sobelY = img.sobel(image);
-    
-    // Calculate gradient magnitude
-    final edges = img.Image(width: image.width, height: image.height);
-    for (int y = 0; y < image.height; y++) {
-      for (int x = 0; x < image.width; x++) {
-        final gx = img.getLuminance(sobelX.getPixel(x, y));
-        final gy = img.getLuminance(sobelY.getPixel(x, y));
-        final magnitude = math.sqrt(gx * gx + gy * gy);
-        
-        // Threshold the edges
-        final threshold = magnitude > 50 ? 255 : 0;
-        edges.setPixel(x, y, img.ColorRgb8(threshold, threshold, threshold));
-      }
-    }
-    
-    return edges;
-  }
-
-  /// Find the largest quadrilateral in the edge-detected image
-  // ignore: unused_element
-  List<Offset> _findLargestQuadrilateral(img.Image edges, int width, int height) {
-    // Simple implementation: find the bounding box of edge pixels
-    // In a production implementation, you would use contour detection
-    int minX = width, minY = height, maxX = 0, maxY = 0;
-    
-    for (int y = 0; y < height; y++) {
-      for (int x = 0; x < width; x++) {
-        final pixel = edges.getPixel(x, y);
-        final luminance = img.getLuminance(pixel);
-        
-        if (luminance > 128) { // Edge pixel
-          minX = minX > x ? x : minX;
-          minY = minY > y ? y : minY;
-          maxX = maxX < x ? x : maxX;
-          maxY = maxY < y ? y : maxY;
-        }
-      }
-    }
-    
-    // Add some padding
-    const padding = 10;
-    minX = (minX - padding).clamp(0, width - 1);
-    minY = (minY - padding).clamp(0, height - 1);
-    maxX = (maxX + padding).clamp(0, width - 1);
-    maxY = (maxY + padding).clamp(0, height - 1);
-    
-    return [
-      Offset(minX.toDouble(), minY.toDouble()),
-      Offset(maxX.toDouble(), minY.toDouble()),
-      Offset(maxX.toDouble(), maxY.toDouble()),
-      Offset(minX.toDouble(), maxY.toDouble()),
-    ];
-  }
-
-  /// Order corners in consistent order: top-left, top-right, bottom-right, bottom-left
-  // ignore: unused_element
-  List<Offset> _orderCorners(List<Offset> corners) {
-    if (corners.length != 4) return corners;
-    
-    // Calculate center point
-    final centerX = corners.map((c) => c.dx).reduce((a, b) => a + b) / 4;
-    final centerY = corners.map((c) => c.dy).reduce((a, b) => a + b) / 4;
-    
-    // Sort corners by angle from center
-    final sortedCorners = List<Offset>.from(corners);
-    sortedCorners.sort((a, b) {
-      final angleA = math.atan2(a.dy - centerY, a.dx - centerX);
-      final angleB = math.atan2(b.dy - centerY, b.dx - centerX);
-      return angleA.compareTo(angleB);
-    });
-    
-    // Find the top-left corner (minimum x + y)
-    int topLeftIndex = 0;
-    double minSum = sortedCorners[0].dx + sortedCorners[0].dy;
-    for (int i = 1; i < 4; i++) {
-      final sum = sortedCorners[i].dx + sortedCorners[i].dy;
-      if (sum < minSum) {
-        minSum = sum;
-        topLeftIndex = i;
-      }
-    }
-    
-    // Reorder to start from top-left and go clockwise
-    final ordered = <Offset>[];
-    for (int i = 0; i < 4; i++) {
-      ordered.add(sortedCorners[(topLeftIndex + i) % 4]);
-    }
-    
-    return ordered;
-  }
-
-  /// Calculate optimal output dimensions for perspective correction
-  Size _calculateOptimalDimensions(List<Offset> corners, int originalWidth, int originalHeight) {
-    // Calculate distances between corners
-    final topWidth = (corners[1] - corners[0]).distance;
-    final bottomWidth = (corners[2] - corners[3]).distance;
-    final leftHeight = (corners[3] - corners[0]).distance;
-    final rightHeight = (corners[2] - corners[1]).distance;
-    
-    // Use average dimensions
-    final width = ((topWidth + bottomWidth) / 2).ceil();
-    final height = ((leftHeight + rightHeight) / 2).ceil();
-    
-    // Ensure minimum dimensions
-    final outputWidth = width < 100 ? 100 : width;
-    final outputHeight = height < 100 ? 100 : height;
-    
-    return Size(outputWidth.toDouble(), outputHeight.toDouble());
-  }
-
-  /// Inverse perspective transformation for mapping destination to source coordinates
-  img.Point _inversePerspectiveTransform(
-    img.Point destPoint,
-    List<img.Point> sourcePoints,
-    List<img.Point> destPoints,
-  ) {
-    // Calculate homography matrix (simplified implementation)
-    // In a production system, you would use a proper linear algebra library
-    final srcW = destPoints[1].x - destPoints[0].x;
-    final srcH = destPoints[3].y - destPoints[0].y;
-    final dstW = sourcePoints[1].x - sourcePoints[0].x;
-    final dstH = sourcePoints[3].y - sourcePoints[0].y;
-    
-    final x = sourcePoints[0].x + (destPoint.x - destPoints[0].x) * dstW / srcW;
-    final y = sourcePoints[0].y + (destPoint.y - destPoints[0].y) * dstH / srcH;
-    
-    return img.Point(x.toInt(), y.toInt());
-  }
-
-  /// Bilinear interpolation for smooth pixel sampling
-  img.Color _bilinearInterpolate(img.Image image, double x, double y) {
-    final x1 = x.floor();
-    final y1 = y.floor();
-    final x2 = (x1 + 1).clamp(0, image.width - 1);
-    final y2 = (y1 + 1).clamp(0, image.height - 1);
-    
-    final dx = x - x1;
-    final dy = y - y1;
-    
-    // Get the four neighboring pixels
-    final p1 = image.getPixel(x1, y1);
-    final p2 = image.getPixel(x2, y1);
-    final p3 = image.getPixel(x1, y2);
-    final p4 = image.getPixel(x2, y2);
-    
-    // Interpolate each channel
-    final r = (p1.r * (1 - dx) + p2.r * dx) * (1 - dy) + 
-              (p3.r * (1 - dx) + p4.r * dx) * dy;
-    final g = (p1.g * (1 - dx) + p2.g * dx) * (1 - dy) + 
-              (p3.g * (1 - dx) + p4.g * dx) * dy;
-    final b = (p1.b * (1 - dx) + p2.b * dx) * (1 - dy) + 
-              (p3.b * (1 - dx) + p4.b * dx) * dy;
-    final a = (p1.a * (1 - dx) + p2.a * dx) * (1 - dy) + 
-              (p3.a * (1 - dx) + p4.a * dx) * dy;
-    
-    return img.ColorRgba8(r.round(), g.round(), b.round(), a.round());
-  }
-
   /// Fallback corners when edge detection fails
   List<Offset> _getFallbackCorners(Uint8List imageData) {
     // Return default corners for any image data
@@ -704,7 +443,7 @@ class ImageProcessor {
     ];
   }
 
-  /// Calculate output dimensions based on the maximum width and height of the quadrilateral
+  /// Calculate output dimensions based on maximum width and height of the quadrilateral
   Size _calculateOutputDimensions(List<Offset> corners, {DocumentFormat? format, int rotation = 0}) {
     if (corners.length != 4) {
       return const Size(400, 300); // Default fallback
@@ -736,7 +475,7 @@ class ImageProcessor {
     // Get base aspect ratio for the specified format (always portrait)
     final baseAspectRatio = _getDocumentFormatAspectRatio(format);
     
-    // Determine if we should use landscape orientation based on the detected document shape
+    // Determine if we should use landscape orientation based on detected document shape
     // and rotation. We check if the original document is wider than tall.
     final detectedIsLandscape = maxWidth > maxHeight;
     final rotationIsLandscape = (rotation % 180) == 90;
@@ -912,7 +651,7 @@ class ImageProcessor {
     // Solve the system using Gaussian elimination
     final h = _solveLinearSystem(A, b);
     
-    // Return the 3x3 homography matrix (h[8] = 1)
+    // Return 3x3 homography matrix (h[8] = 1)
     return [
       h[0], h[1], h[2],
       h[3], h[4], h[5],
@@ -1007,7 +746,7 @@ class ImageProcessor {
     final dx = x - x1;
     final dy = y - y1;
     
-    // Get the four neighboring pixels
+    // Get four neighboring pixels
     final p1 = _getPixel(pixels, width, x1, y1);
     final p2 = _getPixel(pixels, width, x2, y1);
     final p3 = _getPixel(pixels, width, x1, y2);

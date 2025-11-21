@@ -14,9 +14,6 @@ dependencies:
   # Local package dependency
   document_scanner:
     path: ../
-  
-  # Basic dependencies
-  package_info_plus: ^8.0.2
 
 dev_dependencies:
   flutter_test:
