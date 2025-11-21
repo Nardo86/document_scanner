@@ -88,7 +88,18 @@ class DocumentScannerService {
           processingOptions: options,
           customFilename: customFilename,
           source: 'camera',
+          resizeInfo: captureResult.resizeInfo,
         );
+      }
+
+      final metadata = <String, dynamic>{
+        'source': 'camera',
+        'originalSize': captureResult.imageData!.length,
+      };
+      
+      // Add resize information if available
+      if (captureResult.resizeInfo != null) {
+        metadata.addAll(captureResult.resizeInfo!.toMetadata());
       }
 
       final document = ScannedDocument(
@@ -98,10 +109,7 @@ class DocumentScannerService {
         scanTime: DateTime.now(),
         processingOptions: options,
         rawImageData: captureResult.imageData,
-        metadata: {
-          'source': 'camera',
-          'originalSize': captureResult.imageData!.length,
-        },
+        metadata: metadata,
       );
 
       return ScanResult.success(document: document);
@@ -128,6 +136,16 @@ class DocumentScannerService {
 
       final options = processingOptions ?? _getDefaultOptions(documentType);
 
+      final metadata = <String, dynamic>{
+        'source': 'gallery',
+        'originalSize': captureResult.imageData!.length,
+      };
+      
+      // Add resize information if available
+      if (captureResult.resizeInfo != null) {
+        metadata.addAll(captureResult.resizeInfo!.toMetadata());
+      }
+
       final document = ScannedDocument(
         id: _generateId(),
         type: documentType,
@@ -135,10 +153,7 @@ class DocumentScannerService {
         scanTime: DateTime.now(),
         processingOptions: options,
         rawImageData: captureResult.imageData,
-        metadata: {
-          'source': 'gallery',
-          'originalSize': captureResult.imageData!.length,
-        },
+        metadata: metadata,
       );
 
       return ScanResult.success(document: document);
@@ -173,6 +188,7 @@ class DocumentScannerService {
         processingOptions: options,
         customFilename: customFilename,
         source: 'camera',
+        resizeInfo: captureResult.resizeInfo,
       );
     } catch (e) {
       return ScanResult.error(error: 'Failed to scan and process document: $e');
@@ -205,6 +221,7 @@ class DocumentScannerService {
         processingOptions: options,
         customFilename: customFilename,
         source: 'gallery',
+        resizeInfo: captureResult.resizeInfo,
       );
     } catch (e) {
       return ScanResult.error(error: 'Failed to import and process document: $e');
@@ -423,6 +440,7 @@ class DocumentScannerService {
     required DocumentProcessingOptions processingOptions,
     required String source,
     String? customFilename,
+    ImageResizeInfo? resizeInfo,
   }) async {
     try {
       final processedImageData = await _imageProcessor.processImage(
@@ -446,6 +464,21 @@ class DocumentScannerService {
         );
       }
 
+      final metadata = <String, dynamic>{
+        'source': source,
+        'originalSize': rawImageData.length,
+        'processedSize': processedImageData.length,
+        'pdfSize': pdfData?.length,
+        'autoProcessed': true,
+        'finalized': true,
+        'finalizedAt': DateTime.now().toIso8601String(),
+      };
+      
+      // Add resize information if available
+      if (resizeInfo != null) {
+        metadata.addAll(resizeInfo.toMetadata());
+      }
+
       final document = ScannedDocument(
         id: _generateId(),
         type: documentType,
@@ -455,15 +488,7 @@ class DocumentScannerService {
         rawImageData: rawImageData,
         processedImageData: processedImageData,
         pdfData: pdfData,
-        metadata: {
-          'source': source,
-          'originalSize': rawImageData.length,
-          'processedSize': processedImageData.length,
-          'pdfSize': pdfData?.length,
-          'autoProcessed': true,
-          'finalized': true,
-          'finalizedAt': DateTime.now().toIso8601String(),
-        },
+        metadata: metadata,
       );
 
       final savedDocument = await _saveToExternalStorage(

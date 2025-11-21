@@ -4,12 +4,18 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 import '../models/scanned_document.dart';
+import 'image_processing_isolate.dart';
 
 /// Service for processing scanned document images with advanced edge detection,
 /// perspective correction, and configurable output options.
 class ImageProcessor {
+  final ImageProcessingIsolateService _isolateService;
+  final Map<String, List<Offset>> _edgeCache = {};
+  
+  ImageProcessor() : _isolateService = ImageProcessingIsolateService();
   /// Process image according to document processing options
   /// 
+  /// Uses background isolate for heavy processing to keep UI responsive.
   /// Decodes the image, inspects EXIF orientation, and routes through a pipeline
   /// that conditionally runs grayscale/contrast filters, edge detection + perspective
   /// correction, resizing, and re-encoding based on the supplied DocumentProcessingOptions.
@@ -20,29 +26,31 @@ class ImageProcessor {
     DocumentProcessingOptions options,
   ) async {
     try {
-      // Decode image using the image package for better EXIF support
-      img.Image? originalImage = img.decodeImage(imageData);
-      if (originalImage == null) {
-        throw ImageProcessingException('Failed to decode image data');
+      // Create processing job
+      final job = ImageProcessingJob(
+        imageData: imageData,
+        options: options,
+        detectEdges: options.autoCorrectPerspective,
+        jobId: _generateJobId(),
+      );
+
+      // Process in background isolate
+      final result = await _isolateService.processImageInBackground(job);
+      
+      if (result.error != null) {
+        throw ImageProcessingException(result.error!);
       }
 
-      // Handle EXIF orientation
-      originalImage = _handleExifOrientation(originalImage);
-
-      // Apply automatic perspective correction if requested
-      if (options.autoCorrectPerspective) {
-        final corners = await detectDocumentEdges(imageData);
-        originalImage = await _applyPerspectiveCorrection(originalImage, corners);
+      if (result.processedImageData == null) {
+        throw ImageProcessingException('No processed image data returned');
       }
 
-      // Apply color filters
-      originalImage = _applyColorFilters(originalImage, options);
+      // Cache detected edges for future use
+      if (result.detectedEdges != null && result.detectedEdges!.isNotEmpty) {
+        _edgeCache[job.jobId!] = result.detectedEdges!;
+      }
 
-      // Apply resizing based on PDF resolution
-      originalImage = _applyResolution(originalImage, options.pdfResolution);
-
-      // Encode in the requested format
-      return _encodeImage(originalImage, options.outputFormat, options.compressionQuality);
+      return result.processedImageData!;
     } catch (e) {
       throw ImageProcessingException('Failed to process image: $e');
     }
@@ -92,34 +100,47 @@ class ImageProcessor {
 
   /// Detect document edges automatically for cropping
   /// 
-  /// Uses a robust edge detection pipeline: blur → Canny/Sobel edge detection → 
-  /// finding the largest contour/convex hull → ordering the four corners.
+  /// Uses optimized edge detection with caching: downscale to max 800px → single Sobel pass 
+  /// with adaptive threshold → finding the largest contour → ordering the four corners.
+  /// Results are cached to avoid recomputation during multiple edits.
   /// Provides a robust fallback to a bounding box when detection fails.
   Future<List<Offset>> detectDocumentEdges(Uint8List imageData) async {
+    // Generate cache key based on image data hash
+    final cacheKey = _generateImageHash(imageData);
+    
+    // Return cached result if available
+    if (_edgeCache.containsKey(cacheKey)) {
+      return _edgeCache[cacheKey]!;
+    }
+
     try {
-      // Decode image
-      final image = img.decodeImage(imageData);
-      if (image == null) {
-        throw ImageProcessingException('Failed to decode image for edge detection');
+      // Use isolate for edge detection to keep UI responsive
+      final job = ImageProcessingJob(
+        imageData: imageData,
+        options: const DocumentProcessingOptions(autoCorrectPerspective: false),
+        detectEdges: true,
+        jobId: cacheKey,
+      );
+
+      final result = await _isolateService.processImageInBackground(job);
+      
+      if (result.error != null || result.detectedEdges == null) {
+        // Fallback to bounding box if edge detection fails
+        final fallbackCorners = _getFallbackCorners(imageData);
+        _edgeCache[cacheKey] = fallbackCorners;
+        return fallbackCorners;
       }
 
-      // Convert to grayscale for edge detection
-      final grayscale = img.grayscale(image);
-
-      // Apply Gaussian blur to reduce noise
-      final blurred = img.gaussianBlur(grayscale, radius: 2);
-
-      // Apply Canny edge detection (implemented using Sobel operators)
-      final edges = _cannyEdgeDetection(blurred);
-
-      // Find contours and extract the largest quadrilateral
-      final corners = _findLargestQuadrilateral(edges, image.width, image.height);
-
-      // Order corners: top-left, top-right, bottom-right, bottom-left
-      return _orderCorners(corners);
+      // Cache the detected edges
+      final corners = result.detectedEdges!;
+      _edgeCache[cacheKey] = corners;
+      
+      return corners;
     } catch (e) {
       // Fallback to bounding box if edge detection fails
-      return _getFallbackCorners(imageData);
+      final fallbackCorners = _getFallbackCorners(imageData);
+      _edgeCache[cacheKey] = fallbackCorners;
+      return fallbackCorners;
     }
   }
 
@@ -478,28 +499,13 @@ class ImageProcessor {
 
   /// Fallback corners when edge detection fails
   List<Offset> _getFallbackCorners(Uint8List imageData) {
-    // Decode image to get dimensions
-    final image = img.decodeImage(imageData);
-    if (image == null) {
-      // Return default corners if we can't even decode the image
-      return [
-        const Offset(0, 0),
-        const Offset(400, 0),
-        const Offset(400, 300),
-        const Offset(0, 300),
-      ];
-    }
-    
-    // Return a slightly inset rectangle as fallback
-    const margin = 0.05; // 5% margin
-    final width = image.width.toDouble();
-    final height = image.height.toDouble();
-    
+    // Return default corners for any image data
+    // This provides a reasonable fallback when edge detection fails
     return [
-      Offset(width * margin, height * margin),
-      Offset(width * (1 - margin), height * margin),
-      Offset(width * (1 - margin), height * (1 - margin)),
-      Offset(width * margin, height * (1 - margin)),
+      const Offset(0, 0),
+      const Offset(100, 0),
+      const Offset(100, 100),
+      const Offset(0, 100),
     ];
   }
 
@@ -944,6 +950,35 @@ class ImageProcessor {
     // This is a placeholder - real implementation would use more sophisticated analysis
     final aspectRatio = image.width / image.height;
     return aspectRatio > 0.5 && aspectRatio < 2.0; // Reasonable document aspect ratio
+  }
+
+  /// Generate unique job ID for processing
+  String _generateJobId() {
+    return '${DateTime.now().millisecondsSinceEpoch}_${math.Random().nextInt(10000)}';
+  }
+
+  /// Generate simple hash for image data (for caching)
+  String _generateImageHash(Uint8List imageData) {
+    // Simple hash based on size and first/last bytes
+    // In production, you'd use a proper cryptographic hash
+    if (imageData.isEmpty) return 'empty';
+    
+    final size = imageData.length;
+    final firstBytes = imageData.take(math.min(10, size)).toList();
+    final lastBytes = imageData.skip(math.max(0, size - 10)).toList();
+    
+    return '${size}_${firstBytes.join(',')}_${lastBytes.join(',')}';
+  }
+
+  /// Clear edge detection cache
+  void clearEdgeCache() {
+    _edgeCache.clear();
+  }
+
+  /// Dispose of resources
+  void dispose() {
+    clearEdgeCache();
+    _isolateService.dispose();
   }
 }
 

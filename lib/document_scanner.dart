@@ -11,6 +11,7 @@ export 'src/services/pdf_generator.dart';
 export 'src/services/qr_scanner_service.dart';
 export 'src/services/camera_service.dart';
 export 'src/services/storage_helper.dart';
+export 'src/services/image_processing_isolate.dart';
 
 // Export UI widgets
 export 'src/ui/document_scanner_widget.dart';
