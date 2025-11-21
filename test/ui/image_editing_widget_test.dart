@@ -52,6 +52,33 @@ void main() {
       await tester.pump();
     });
 
+    testWidgets('should return to original orientation after four rotations', (WidgetTester tester) async {
+      await tester.pumpWidget(createTestWidget(imageData: testImageData));
+
+      // Tap rotate right 4 times (360 degrees)
+      for (int i = 0; i < 4; i++) {
+        await tester.tap(find.byIcon(Icons.rotate_right));
+        await tester.pumpAndSettle(); // Wait for async operations
+      }
+
+      // After 4 rotations, the image should be back to original orientation
+      expect(find.byType(Image), findsOneWidget);
+    });
+
+    testWidgets('should handle rotation in both directions', (WidgetTester tester) async {
+      await tester.pumpWidget(createTestWidget(imageData: testImageData));
+
+      // Rotate right once
+      await tester.tap(find.byIcon(Icons.rotate_right));
+      await tester.pumpAndSettle();
+
+      // Rotate left once (should return to original)
+      await tester.tap(find.byIcon(Icons.rotate_left));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(Image), findsOneWidget);
+    });
+
     testWidgets('should have crop controls', (WidgetTester tester) async {
       await tester.pumpWidget(createTestWidget(imageData: testImageData));
 

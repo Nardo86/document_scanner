@@ -74,9 +74,11 @@ class ImageProcessor {
       // Handle EXIF orientation
       image = _handleExifOrientation(image);
 
-      // Apply rotation
-      if (editingOptions.rotationDegrees != 0) {
-        image = img.copyRotate(image, angle: editingOptions.rotationDegrees * math.pi / 180);
+      // Apply rotation (normalized to multiples of 90°)
+      final normalizedRotation = (editingOptions.rotationDegrees % 360);
+      if (normalizedRotation != 0) {
+        // img.copyRotate expects degrees, not radians
+        image = img.copyRotate(image, angle: normalizedRotation);
       }
 
       // Apply perspective correction and cropping if corners are provided
