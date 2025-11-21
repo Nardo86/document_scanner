@@ -97,7 +97,6 @@ class DocumentScannerService {
 
       // Apply auto-crop if enabled before opening editor
       Uint8List? processedImageData;
-      List<Offset>? detectedCorners;
       Map<String, dynamic>? autoCropMetadata;
 
       if (options.autoCorrectPerspective) {
@@ -108,7 +107,6 @@ class DocumentScannerService {
           );
           
           processedImageData = processingResult['processedImageData'] as Uint8List;
-          detectedCorners = processingResult['detectedEdges'] as List<Offset>;
           autoCropMetadata = processingResult['metadata'] as Map<String, dynamic>;
         } catch (e) {
           // If auto-crop fails, continue with original image
@@ -168,7 +166,6 @@ class DocumentScannerService {
 
       // Apply auto-crop if enabled before opening editor
       Uint8List? processedImageData;
-      List<Offset>? detectedCorners;
       Map<String, dynamic>? autoCropMetadata;
 
       if (options.autoCorrectPerspective) {
@@ -179,7 +176,6 @@ class DocumentScannerService {
           );
           
           processedImageData = processingResult['processedImageData'] as Uint8List;
-          detectedCorners = processingResult['detectedEdges'] as List<Offset>;
           autoCropMetadata = processingResult['metadata'] as Map<String, dynamic>;
         } catch (e) {
           // If auto-crop fails, continue with original image
