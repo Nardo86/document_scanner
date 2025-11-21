@@ -41,7 +41,7 @@ class _DocumentScannerShowcaseAppState extends State<DocumentScannerShowcaseApp>
         ),
         routes: {
           SinglePageScreen.routeName: (_) => const SinglePageScreen(),
-          MultiPageShowcaseScreen.routeName: (_) => const MultiPageShowcaseScreen(),
+          MultiPageScreen.routeName: (_) => const MultiPageScreen(),
           PdfPreviewShowcaseScreen.routeName: (_) => const PdfPreviewShowcaseScreen(),
           CapabilitiesLabScreen.routeName: (_) => const CapabilitiesLabScreen(),
         },
