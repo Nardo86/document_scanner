@@ -1,11 +1,8 @@
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../models/scanned_document.dart';
 import '../models/scan_result.dart';
 import '../services/document_scanner_service.dart';
-import 'image_editing_widget.dart';
-import 'pdf_preview_widget.dart';
 
 /// Main widget for document scanning functionality
 class DocumentScannerWidget extends StatefulWidget {
@@ -359,122 +356,16 @@ class _DocumentScannerWidgetState extends State<DocumentScannerWidget> {
 
   /// Show image editor automatically after scan/import
   Future<void> _showImageEditor(ScannedDocument document) async {
-    if (document.rawImageData == null) {
-      // No image data available, proceed with original result
-      final result = ScanResult.success(document: document);
-      widget.onScanComplete(result);
-      return;
-    }
-
-    try {
-      // Navigate to image editing screen
-      final editResult = await Navigator.push<Map<String, dynamic>?>(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ImageEditingWidget(
-            imageData: document.rawImageData!,
-            onImageEdited: (editedData, selectedResolution, selectedFormat) {
-              Navigator.pop(context, {'imageData': editedData, 'resolution': selectedResolution, 'format': selectedFormat});
-            },
-            onCancel: () {
-              Navigator.pop(context, null);
-            },
-          ),
-        ),
-      );
-
-      if (editResult != null) {
-        final editedImageData = editResult['imageData'] as Uint8List;
-        final selectedResolution = editResult['resolution'] as PdfResolution;
-        final selectedFormat = editResult['format'] as DocumentFormat;
-        
-        // Create new processing options with selected resolution and format
-        final updatedProcessingOptions = DocumentProcessingOptions(
-          convertToGrayscale: widget.processingOptions?.convertToGrayscale ?? true,
-          enhanceContrast: widget.processingOptions?.enhanceContrast ?? true,
-          autoCorrectPerspective: widget.processingOptions?.autoCorrectPerspective ?? true,
-          compressionQuality: widget.processingOptions?.compressionQuality ?? 0.8,
-          outputFormat: widget.processingOptions?.outputFormat ?? ImageFormat.jpeg,
-          generatePdf: widget.processingOptions?.generatePdf ?? true,
-          saveImageFile: widget.processingOptions?.saveImageFile ?? false,
-          pdfResolution: selectedResolution, // Use selected resolution
-          documentFormat: selectedFormat, // Use selected format
-          customFilename: widget.processingOptions?.customFilename,
-        );
-        
-        // Create document with edited image and selected resolution
-        final editedDocument = ScannedDocument(
-          id: document.id,
-          type: document.type,
-          originalPath: document.originalPath,
-          scanTime: document.scanTime,
-          processingOptions: updatedProcessingOptions,
-          processedPath: document.processedPath,
-          pdfPath: document.pdfPath,
-          rawImageData: document.rawImageData,
-          processedImageData: editedImageData,
-          pdfData: document.pdfData,
-          pages: document.pages,
-          isMultiPage: document.isMultiPage,
-          metadata: {
-            ...document.metadata,
-            'edited': true,
-            'editedAt': DateTime.now().toIso8601String(),
-            'selectedResolution': selectedResolution.name,
-            'selectedFormat': selectedFormat.name,
-          },
-        );
-        
-        // Finalize the document with the selected resolution
-        final finalResult = await _scannerService.finalizeScanResult(
-          editedDocument,
-          widget.customFilename,
-        );
-        
-        // Show PDF preview before completing
-        if (finalResult.success && finalResult.document?.pdfData != null) {
-          await _showPdfPreview(finalResult.document!);
-        } else {
-          widget.onScanComplete(finalResult);
-        }
-      } else {
-        // User cancelled editing
-        widget.onScanComplete(ScanResult.error(
-          error: 'Editing cancelled',
-          type: ScanResultType.scan,
-        ));
-      }
-    } catch (e) {
-      widget.onScanComplete(ScanResult.error(
-        error: 'Error during image editing: $e',
-        type: ScanResultType.scan,
-      ));
-    }
-  }
-
-  /// Show PDF preview before final completion
-  Future<void> _showPdfPreview(ScannedDocument document) async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => PdfPreviewWidget(
-          pdfData: document.pdfData,
-          pdfPath: document.pdfPath,
-          title: 'Document Preview',
-          onConfirm: () {
-            Navigator.pop(context);
-            widget.onScanComplete(ScanResult.success(document: document));
-          },
-          onCancel: () {
-            Navigator.pop(context);
-            widget.onScanComplete(ScanResult.error(
-              error: 'Document cancelled after preview',
-              type: ScanResultType.scan,
-            ));
-          },
-        ),
-      ),
+    // Use the shared helper method from DocumentScannerService
+    final result = await _scannerService.showImageEditorFlow(
+      context: context,
+      document: document,
+      customFilename: widget.customFilename,
+      processingOptions: widget.processingOptions,
     );
+    
+    // Call the completion callback with the final result
+    widget.onScanComplete(result);
   }
   
   /// Handle error
