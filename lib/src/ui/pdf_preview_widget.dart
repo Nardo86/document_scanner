@@ -1,6 +1,8 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:pdfx/pdfx.dart';
 
 /// Widget for lightweight PDF preview before final saving
 class PdfPreviewWidget extends StatefulWidget {
@@ -10,6 +12,7 @@ class PdfPreviewWidget extends StatefulWidget {
   final VoidCallback? onConfirm;
   final VoidCallback? onCancel;
   final bool isLoading;
+  final Uint8List? fallbackImage;
 
   const PdfPreviewWidget({
     Key? key,
@@ -19,6 +22,7 @@ class PdfPreviewWidget extends StatefulWidget {
     this.onConfirm,
     this.onCancel,
     this.isLoading = false,
+    this.fallbackImage,
   }) : super(key: key);
 
   @override
@@ -27,6 +31,61 @@ class PdfPreviewWidget extends StatefulWidget {
 
 class _PdfPreviewWidgetState extends State<PdfPreviewWidget> {
   String? _error;
+  late Future<PdfDocument> _documentFuture;
+  late PdfController _pdfController;
+  bool _pdfLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _documentFuture = _loadPdf();
+    _pdfController = PdfController(document: _documentFuture);
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+  }
+
+  Future<PdfDocument> _loadPdf() async {
+    setState(() {
+      _pdfLoading = true;
+      _error = null;
+    });
+
+    try {
+      PdfDocument? document;
+
+      if (widget.pdfData != null) {
+        document = await PdfDocument.openData(widget.pdfData!);
+      } else if (widget.pdfPath != null && widget.pdfPath!.isNotEmpty) {
+        final file = File(widget.pdfPath!);
+        if (!await file.exists()) {
+          throw Exception('PDF file not found at path: ${widget.pdfPath}');
+        }
+        document = await PdfDocument.openFile(widget.pdfPath!);
+      }
+
+      if (mounted) {
+        setState(() {
+          _pdfLoading = false;
+        });
+      }
+      
+      if (document == null) {
+        throw Exception('No PDF data provided');
+      }
+      return document;
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = 'Failed to load PDF: ${e.toString()}';
+          _pdfLoading = false;
+        });
+      }
+      rethrow;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -147,115 +206,59 @@ class _PdfPreviewWidgetState extends State<PdfPreviewWidget> {
   }
 
   Widget _buildPdfContent() {
-    if (_error != null) {
-      return _buildErrorState();
-    }
-
     if (widget.isLoading) {
       return _buildLoadingState();
+    }
+
+    if (_error != null) {
+      return _buildErrorState();
     }
 
     if (widget.pdfData == null && widget.pdfPath == null) {
       return _buildNoDataState();
     }
 
-    return _buildPdfViewer();
+    if (_pdfLoading) {
+      return _buildLoadingState();
+    }
+
+    return FutureBuilder<PdfDocument>(
+      future: _documentFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _buildLoadingState();
+        }
+        
+        if (snapshot.hasError) {
+          setState(() {
+            _error = 'Error: ${snapshot.error}';
+          });
+          return _buildErrorState();
+        }
+        
+        if (!snapshot.hasData) {
+          return _buildNoDataState();
+        }
+
+        return _buildPdfViewer();
+      },
+    );
   }
 
   Widget _buildPdfViewer() {
-    // For now, show a simple PDF info view since we don't have flutter_pdfview
-    // In a real implementation, you might want to add flutter_pdfview as a dependency
-    // or use a different PDF viewing solution
-    return _buildPdfInfoView();
-  }
-
-  Widget _buildPdfInfoView() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.picture_as_pdf,
-            size: 80,
-            color: Theme.of(context).primaryColor,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'PDF Document Ready',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: Theme.of(context).primaryColor,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'PDF generated successfully',
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: Colors.grey.shade600,
-            ),
-          ),
-          if (widget.pdfData != null) ...[
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(16),
-              margin: const EdgeInsets.symmetric(horizontal: 32),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.grey.shade300),
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'File Size:',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text(
-                        '${(widget.pdfData!.length / 1024).toStringAsFixed(1)} KB',
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Format:',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text(
-                        'PDF',
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-          const SizedBox(height: 24),
-          Icon(
-            Icons.check_circle,
-            size: 48,
-            color: Colors.green.shade400,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Ready to save',
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: Colors.green.shade700,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
+    return PdfView(
+      controller: _pdfController,
+      scrollDirection: Axis.vertical,
+      onDocumentError: (error) {
+        setState(() {
+          _error = 'Error rendering PDF: $error';
+        });
+      },
+      builders: PdfViewBuilders<DefaultBuilderOptions>(
+        options: const DefaultBuilderOptions(),
+        documentLoaderBuilder: (context) => _buildLoadingState(),
+        pageLoaderBuilder: (context) => _buildLoadingState(),
+        errorBuilder: (context, error) => _buildErrorState(),
       ),
     );
   }
@@ -277,44 +280,123 @@ class _PdfPreviewWidgetState extends State<PdfPreviewWidget> {
   }
 
   Widget _buildErrorState() {
-    return Center(
+    final hasFallback = widget.fallbackImage != null;
+    
+    return SingleChildScrollView(
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.start,
         children: [
-          Icon(
-            Icons.error_outline,
-            size: 64,
-            color: Colors.red.shade400,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Error Loading PDF',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              color: Colors.red.shade700,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
-            child: Text(
-              _error ?? 'Unknown error occurred',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Colors.red.shade600,
+          if (hasFallback) ...[
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.memory(
+                      widget.fallbackImage!,
+                      fit: BoxFit.contain,
+                      height: 300,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.orange.shade300),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.warning_amber,
+                              color: Colors.orange.shade700,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'PDF Rendering Unavailable',
+                                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                                  color: Colors.orange.shade700,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _error ?? 'Failed to render PDF preview',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Colors.orange.shade600,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Showing processed image instead',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Colors.orange.shade600,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
-          const SizedBox(height: 24),
-          OutlinedButton.icon(
-            onPressed: () => setState(() {
-              _error = null;
-            }),
-            icon: const Icon(Icons.refresh),
-            label: const Text('Retry'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.red,
+          ] else ...[
+            // No fallback image available
+            Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.error_outline,
+                    size: 64,
+                    color: Colors.red.shade400,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Error Loading PDF',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: Colors.red.shade700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _error ?? 'Unknown error occurred',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Colors.red.shade600,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _error = null;
+                        _documentFuture = _loadPdf();
+                        _pdfController = PdfController(document: _documentFuture);
+                      });
+                    },
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
