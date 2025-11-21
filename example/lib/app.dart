@@ -6,6 +6,12 @@ import 'screens/pdf_preview_screen.dart';
 import 'screens/single_page_screen.dart';
 import 'state/showcase_state.dart';
 
+enum _ShowcaseTab {
+  quickScan,
+  multiScan,
+  lab,
+}
+
 class DocumentScannerShowcaseApp extends StatefulWidget {
   const DocumentScannerShowcaseApp({super.key});
 
@@ -72,11 +78,7 @@ class _TabNavigationShell extends StatelessWidget {
           Expanded(
             child: IndexedStack(
               index: currentIndex,
-              children: const [
-                _SinglePageTab(),
-                _MultiPageTab(),
-                _CapabilitiesLabTab(),
-              ],
+              children: _ShowcaseTab.values.map((tab) => _buildTabContent(tab)).toList(),
             ),
           ),
         ],
@@ -84,29 +86,47 @@ class _TabNavigationShell extends StatelessWidget {
       bottomNavigationBar: NavigationBar(
         selectedIndex: currentIndex,
         onDestinationSelected: onTabSelected,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.document_scanner),
-            label: 'Single',
-            selectedIcon: Icon(Icons.document_scanner_outlined),
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.menu_book),
-            label: 'Multi',
-            selectedIcon: Icon(Icons.menu_book_outlined),
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.science),
-            label: 'Capabilities',
-            selectedIcon: Icon(Icons.science_outlined),
-          ),
-        ],
+        destinations: _ShowcaseTab.values.map((tab) => _buildDestination(tab)).toList(),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showActionMenu(context),
         child: const Icon(Icons.more_vert),
       ),
     );
+  }
+
+  NavigationDestination _buildDestination(_ShowcaseTab tab) {
+    switch (tab) {
+      case _ShowcaseTab.quickScan:
+        return const NavigationDestination(
+          icon: Icon(Icons.flash_on),
+          label: 'Quick Scan',
+          selectedIcon: Icon(Icons.flash_on_outlined),
+        );
+      case _ShowcaseTab.multiScan:
+        return const NavigationDestination(
+          icon: Icon(Icons.camera_alt),
+          label: 'Multi Scan',
+          selectedIcon: Icon(Icons.camera_alt_outlined),
+        );
+      case _ShowcaseTab.lab:
+        return const NavigationDestination(
+          icon: Icon(Icons.science),
+          label: 'Lab',
+          selectedIcon: Icon(Icons.science_outlined),
+        );
+    }
+  }
+
+  Widget _buildTabContent(_ShowcaseTab tab) {
+    switch (tab) {
+      case _ShowcaseTab.quickScan:
+        return const _SinglePageTab();
+      case _ShowcaseTab.multiScan:
+        return const _MultiPageTab();
+      case _ShowcaseTab.lab:
+        return const _CapabilitiesLabTab();
+    }
   }
 
   void _showActionMenu(BuildContext context) {

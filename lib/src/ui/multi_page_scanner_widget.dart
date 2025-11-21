@@ -741,6 +741,25 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
   String _getTitle() {
     return 'Multi-Page ${_getDocumentTypeName()}';
   }
+
+  /// Extract corners from metadata
+  List<Offset>? _extractCornersFromMetadata(Map<String, dynamic> metadata) {
+    try {
+      final detectedEdges = metadata['detectedEdges'] as List<dynamic>?;
+      if (detectedEdges != null && detectedEdges.isNotEmpty) {
+        return detectedEdges.map((edge) {
+          final edgeMap = edge as Map<String, dynamic>;
+          return Offset(
+            (edgeMap['dx'] as num).toDouble(),
+            (edgeMap['dy'] as num).toDouble(),
+          );
+        }).toList();
+      }
+    } catch (e) {
+      print('Error extracting corners from metadata: $e');
+    }
+    return null;
+  }
 }
 
 /// Dialog for reordering pages
@@ -801,25 +820,6 @@ class _PageReorderDialogState extends State<_PageReorderDialog> {
         ),
       ],
     );
-  }
-
-  /// Extract corners from metadata
-  List<Offset>? _extractCornersFromMetadata(Map<String, dynamic> metadata) {
-    try {
-      final detectedEdges = metadata['detectedEdges'] as List<dynamic>?;
-      if (detectedEdges != null && detectedEdges.isNotEmpty) {
-        return detectedEdges.map((edge) {
-          final edgeMap = edge as Map<String, dynamic>;
-          return Offset(
-            (edgeMap['dx'] as num).toDouble(),
-            (edgeMap['dy'] as num).toDouble(),
-          );
-        }).toList();
-      }
-    } catch (e) {
-      print('Error extracting corners from metadata: $e');
-    }
-    return null;
   }
 }
 
