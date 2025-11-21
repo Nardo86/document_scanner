@@ -95,6 +95,27 @@ class DocumentScannerService {
         );
       }
 
+      // Apply auto-crop if enabled before opening editor
+      Uint8List? processedImageData;
+      List<Offset>? detectedCorners;
+      Map<String, dynamic>? autoCropMetadata;
+
+      if (options.autoCorrectPerspective) {
+        try {
+          final processingResult = await _imageProcessor.processImageWithAutoCrop(
+            captureResult.imageData!,
+            options,
+          );
+          
+          processedImageData = processingResult['processedImageData'] as Uint8List;
+          detectedCorners = processingResult['detectedEdges'] as List<Offset>;
+          autoCropMetadata = processingResult['metadata'] as Map<String, dynamic>;
+        } catch (e) {
+          // If auto-crop fails, continue with original image
+          print('Auto-crop failed, continuing with original image: $e');
+        }
+      }
+
       final metadata = <String, dynamic>{
         'source': 'camera',
         'originalSize': captureResult.imageData!.length,
@@ -105,6 +126,11 @@ class DocumentScannerService {
         metadata.addAll(captureResult.resizeInfo!.toMetadata());
       }
 
+      // Add auto-crop metadata if available
+      if (autoCropMetadata != null) {
+        metadata.addAll(autoCropMetadata);
+      }
+
       final document = ScannedDocument(
         id: _generateId(),
         type: documentType,
@@ -112,6 +138,7 @@ class DocumentScannerService {
         scanTime: DateTime.now(),
         processingOptions: options,
         rawImageData: captureResult.imageData,
+        processedImageData: processedImageData,
         metadata: metadata,
       );
 
@@ -139,6 +166,27 @@ class DocumentScannerService {
 
       final options = processingOptions ?? _getDefaultOptions(documentType);
 
+      // Apply auto-crop if enabled before opening editor
+      Uint8List? processedImageData;
+      List<Offset>? detectedCorners;
+      Map<String, dynamic>? autoCropMetadata;
+
+      if (options.autoCorrectPerspective) {
+        try {
+          final processingResult = await _imageProcessor.processImageWithAutoCrop(
+            captureResult.imageData!,
+            options,
+          );
+          
+          processedImageData = processingResult['processedImageData'] as Uint8List;
+          detectedCorners = processingResult['detectedEdges'] as List<Offset>;
+          autoCropMetadata = processingResult['metadata'] as Map<String, dynamic>;
+        } catch (e) {
+          // If auto-crop fails, continue with original image
+          print('Auto-crop failed, continuing with original image: $e');
+        }
+      }
+
       final metadata = <String, dynamic>{
         'source': 'gallery',
         'originalSize': captureResult.imageData!.length,
@@ -149,6 +197,11 @@ class DocumentScannerService {
         metadata.addAll(captureResult.resizeInfo!.toMetadata());
       }
 
+      // Add auto-crop metadata if available
+      if (autoCropMetadata != null) {
+        metadata.addAll(autoCropMetadata);
+      }
+
       final document = ScannedDocument(
         id: _generateId(),
         type: documentType,
@@ -156,6 +209,7 @@ class DocumentScannerService {
         scanTime: DateTime.now(),
         processingOptions: options,
         rawImageData: captureResult.imageData,
+        processedImageData: processedImageData,
         metadata: metadata,
       );
 
@@ -456,6 +510,8 @@ class DocumentScannerService {
         MaterialPageRoute(
           builder: (context) => ImageEditingWidget(
             imageData: document.rawImageData!,
+            initialPreviewData: document.processedImageData,
+            initialCropCorners: _extractCornersFromMetadata(document.metadata),
             onImageEdited: (editedData, selectedResolution, selectedFormat) {
               Navigator.pop(context, {
                 'imageData': editedData, 
@@ -573,10 +629,15 @@ class DocumentScannerService {
     ImageResizeInfo? resizeInfo,
   }) async {
     try {
-      final processedImageData = await _imageProcessor.processImage(
+      // Use the new processImageWithAutoCrop method to get full result with metadata
+      final processingResult = await _imageProcessor.processImageWithAutoCrop(
         rawImageData,
         processingOptions,
       );
+
+      final processedImageData = processingResult['processedImageData'] as Uint8List;
+      final detectedEdges = processingResult['detectedEdges'] as List<Offset>;
+      final autoCropMetadata = processingResult['metadata'] as Map<String, dynamic>;
 
       Uint8List? pdfData;
       if (processingOptions.generatePdf) {
@@ -590,6 +651,8 @@ class DocumentScannerService {
             'originalSize': rawImageData.length,
             'processedSize': processedImageData.length,
             'autoProcessed': true,
+            'autoCrop': autoCropMetadata['autoCrop'],
+            'detectedEdges': detectedEdges.map((offset) => {'dx': offset.dx, 'dy': offset.dy}).toList(),
           },
         );
       }
@@ -602,6 +665,8 @@ class DocumentScannerService {
         'autoProcessed': true,
         'finalized': true,
         'finalizedAt': DateTime.now().toIso8601String(),
+        'autoCrop': autoCropMetadata['autoCrop'],
+        'detectedEdges': detectedEdges.map((offset) => {'dx': offset.dx, 'dy': offset.dy}).toList(),
       };
       
       // Add resize information if available
@@ -694,5 +759,24 @@ class DocumentScannerService {
   /// Generate unique ID for document
   String _generateId() {
     return DateTime.now().millisecondsSinceEpoch.toString();
+  }
+
+  /// Extract corners from metadata
+  List<Offset>? _extractCornersFromMetadata(Map<String, dynamic> metadata) {
+    try {
+      final detectedEdges = metadata['detectedEdges'] as List<dynamic>?;
+      if (detectedEdges != null && detectedEdges.isNotEmpty) {
+        return detectedEdges.map((edge) {
+          final edgeMap = edge as Map<String, dynamic>;
+          return Offset(
+            (edgeMap['dx'] as num).toDouble(),
+            (edgeMap['dy'] as num).toDouble(),
+          );
+        }).toList();
+      }
+    } catch (e) {
+      print('Error extracting corners from metadata: $e');
+    }
+    return null;
   }
 }

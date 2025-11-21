@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 import '../models/scanned_document.dart';
+import 'auto_cropper.dart';
 
 /// Data transfer object for image processing jobs that can run in isolates
 class ImageProcessingJob {
@@ -88,6 +89,8 @@ class ImageProcessingIsolateService {
   factory ImageProcessingIsolateService() => _instance;
   ImageProcessingIsolateService._internal();
 
+  final AutoCropper _autoCropper = AutoCropper();
+
   /// Process an image with optimizations
   Future<ImageProcessingResult> processImageInBackground(ImageProcessingJob job) async {
     try {
@@ -121,28 +124,70 @@ class ImageProcessingIsolateService {
       };
 
       List<Offset>? detectedEdges;
+      Uint8List processedImageData;
 
       // Handle EXIF orientation
       image = _handleExifOrientation(image);
 
       // Apply automatic perspective correction if requested
       if (job.options.autoCorrectPerspective && job.detectEdges) {
-        detectedEdges = await _detectDocumentEdgesDirect(job.imageData);
-        if (detectedEdges.isNotEmpty) {
-          image = await _applyPerspectiveCorrectionDirect(image, detectedEdges);
+        try {
+          // Use the new AutoCropper for the full pipeline
+          final autoCropResult = await _autoCropper.autoCrop(job.imageData);
+          
+          // Apply additional processing if needed
+          Uint8List finalImageData = autoCropResult.croppedImageData;
+          if (job.options.convertToGrayscale || job.options.enhanceContrast) {
+            finalImageData = await _applyAdditionalProcessing(
+              autoCropResult.croppedImageData, 
+              job.options
+            );
+          }
+          
+          processedImageData = finalImageData;
+          detectedEdges = autoCropResult.corners;
           metadata['perspectiveCorrected'] = true;
-          metadata['detectedCorners'] = detectedEdges.map((offset) => {'dx': offset.dx, 'dy': offset.dy}).toList();
+          metadata['autoCrop'] = {
+            'applied': true,
+            'durationMs': autoCropResult.durationMs,
+            'confidence': autoCropResult.confidence,
+            'fallbackUsed': autoCropResult.fallbackUsed,
+            ...autoCropResult.metadata,
+          };
+        } catch (e) {
+          // Fallback to old method if auto-crop fails
+          detectedEdges = await _detectDocumentEdgesDirect(job.imageData);
+          if (detectedEdges.isNotEmpty) {
+            image = await _applyPerspectiveCorrectionDirect(image, detectedEdges);
+            metadata['perspectiveCorrected'] = true;
+            metadata['autoCrop'] = {'applied': false, 'fallback': 'legacy_method'};
+          } else {
+            metadata['autoCrop'] = {'applied': false, 'fallback': 'no_edges'};
+          }
+          
+          // Apply color filters
+          image = _applyColorFiltersDirect(image, job.options);
+
+          // Apply resizing based on PDF resolution
+          image = _applyResolutionDirect(image, job.options.pdfResolution);
+
+          // Encode in the requested format
+          processedImageData = _encodeImageDirect(image, job.options.outputFormat, job.options.compressionQuality);
         }
+      } else {
+        // No auto-crop requested, use regular processing
+        detectedEdges = <Offset>[];
+        metadata['autoCrop'] = {'applied': false};
+
+        // Apply color filters
+        image = _applyColorFiltersDirect(image, job.options);
+
+        // Apply resizing based on PDF resolution
+        image = _applyResolutionDirect(image, job.options.pdfResolution);
+
+        // Encode in the requested format
+        processedImageData = _encodeImageDirect(image, job.options.outputFormat, job.options.compressionQuality);
       }
-
-      // Apply color filters
-      image = _applyColorFiltersDirect(image, job.options);
-
-      // Apply resizing based on PDF resolution
-      image = _applyResolutionDirect(image, job.options.pdfResolution);
-
-      // Encode in the requested format
-      final processedImageData = _encodeImageDirect(image, job.options.outputFormat, job.options.compressionQuality);
 
       metadata['processedWidth'] = image.width;
       metadata['processedHeight'] = image.height;
@@ -159,6 +204,37 @@ class ImageProcessingIsolateService {
         error: 'Failed to process image: $e',
         jobId: job.jobId,
       );
+    }
+  }
+
+  /// Apply additional processing (grayscale, contrast) to already cropped image
+  Future<Uint8List> _applyAdditionalProcessing(
+    Uint8List imageData, 
+    DocumentProcessingOptions options
+  ) async {
+    try {
+      img.Image? image = img.decodeImage(imageData);
+      if (image == null) {
+        throw Exception('Failed to decode image data');
+      }
+
+      // Apply grayscale conversion if requested
+      if (options.convertToGrayscale) {
+        image = img.grayscale(image);
+      }
+
+      // Apply contrast enhancement if requested
+      if (options.enhanceContrast) {
+        image = img.adjustColor(image, contrast: 1.2);
+      }
+
+      // Apply resizing based on PDF resolution
+      image = _applyResolutionDirect(image, options.pdfResolution);
+
+      // Encode in the requested format
+      return _encodeImageDirect(image, options.outputFormat, options.compressionQuality);
+    } catch (e) {
+      throw Exception('Failed to apply additional processing: $e');
     }
   }
 

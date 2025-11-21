@@ -9,12 +9,16 @@ class ImageEditingWidget extends StatefulWidget {
   final Uint8List imageData;
   final Function(Uint8List editedImageData, PdfResolution selectedResolution, DocumentFormat selectedFormat) onImageEdited;
   final VoidCallback? onCancel;
+  final Uint8List? initialPreviewData;
+  final List<Offset>? initialCropCorners;
 
   const ImageEditingWidget({
     Key? key,
     required this.imageData,
     required this.onImageEdited,
     this.onCancel,
+    this.initialPreviewData,
+    this.initialCropCorners,
   }) : super(key: key);
 
   @override
@@ -37,9 +41,17 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
   @override
   void initState() {
     super.initState();
-    _previewImageData = widget.imageData;
     _baseImageData = widget.imageData; // Initialize base image
-    _detectDocumentEdges();
+    
+    // Use initial preview data if provided, otherwise use original image
+    _previewImageData = widget.initialPreviewData ?? widget.imageData;
+    
+    // Use initial crop corners if provided, otherwise detect edges
+    if (widget.initialCropCorners != null && widget.initialCropCorners!.isNotEmpty) {
+      _detectedCorners = widget.initialCropCorners;
+    } else {
+      _detectDocumentEdges();
+    }
   }
 
   Future<void> _detectDocumentEdges() async {

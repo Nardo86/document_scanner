@@ -5,14 +5,16 @@ import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 import '../models/scanned_document.dart';
 import 'image_processing_isolate.dart';
+import 'auto_cropper.dart';
 
 /// Service for processing scanned document images with advanced edge detection,
 /// perspective correction, and configurable output options.
 class ImageProcessor {
   final ImageProcessingIsolateService _isolateService;
+  final AutoCropper _autoCropper;
   final Map<String, List<Offset>> _edgeCache = {};
   
-  ImageProcessor() : _isolateService = ImageProcessingIsolateService();
+  ImageProcessor() : _isolateService = ImageProcessingIsolateService(), _autoCropper = AutoCropper();
   /// Process image according to document processing options
   /// 
   /// Uses background isolate for heavy processing to keep UI responsive.
@@ -26,7 +28,22 @@ class ImageProcessor {
     DocumentProcessingOptions options,
   ) async {
     try {
-      // Create processing job
+      // If auto-crop is enabled, use the new AutoCropper
+      if (options.autoCorrectPerspective) {
+        final autoCropResult = await _autoCropper.autoCrop(imageData);
+        
+        // Apply additional processing if needed
+        if (options.convertToGrayscale || options.enhanceContrast) {
+          return await _applyAdditionalProcessing(
+            autoCropResult.croppedImageData, 
+            options
+          );
+        }
+        
+        return autoCropResult.croppedImageData;
+      }
+
+      // Create processing job for non-auto-crop path
       final job = ImageProcessingJob(
         imageData: imageData,
         options: options,
@@ -53,6 +70,84 @@ class ImageProcessor {
       return result.processedImageData!;
     } catch (e) {
       throw ImageProcessingException('Failed to process image: $e');
+    }
+  }
+
+  /// Apply additional processing (grayscale, contrast) to already cropped image
+  Future<Uint8List> _applyAdditionalProcessing(
+    Uint8List imageData, 
+    DocumentProcessingOptions options
+  ) async {
+    try {
+      img.Image? image = img.decodeImage(imageData);
+      if (image == null) {
+        throw ImageProcessingException('Failed to decode image data');
+      }
+
+      // Apply grayscale conversion if requested
+      if (options.convertToGrayscale) {
+        image = img.grayscale(image);
+      }
+
+      // Apply contrast enhancement if requested
+      if (options.enhanceContrast) {
+        image = img.adjustColor(image, contrast: 1.2);
+      }
+
+      // Encode in the requested format
+      return _encodeImage(image, options.outputFormat, options.compressionQuality);
+    } catch (e) {
+      throw ImageProcessingException('Failed to apply additional processing: $e');
+    }
+  }
+
+  /// Process image with auto-crop and return full result with metadata
+  Future<Map<String, dynamic>> processImageWithAutoCrop(
+    Uint8List imageData,
+    DocumentProcessingOptions options,
+  ) async {
+    try {
+      final result = <String, dynamic>{};
+      
+      if (options.autoCorrectPerspective) {
+        // Use AutoCropper for full pipeline
+        final autoCropResult = await _autoCropper.autoCrop(imageData);
+        
+        // Apply additional processing if needed
+        Uint8List finalImageData = autoCropResult.croppedImageData;
+        if (options.convertToGrayscale || options.enhanceContrast) {
+          finalImageData = await _applyAdditionalProcessing(
+            autoCropResult.croppedImageData, 
+            options
+          );
+        }
+        
+        result['processedImageData'] = finalImageData;
+        result['detectedEdges'] = autoCropResult.corners;
+        result['metadata'] = {
+          'autoCrop': {
+            'applied': true,
+            'durationMs': autoCropResult.durationMs,
+            'confidence': autoCropResult.confidence,
+            'fallbackUsed': autoCropResult.fallbackUsed,
+            ...autoCropResult.metadata,
+          }
+        };
+      } else {
+        // Use regular processing pipeline
+        final processedImageData = await processImage(imageData, options);
+        result['processedImageData'] = processedImageData;
+        result['detectedEdges'] = <Offset>[];
+        result['metadata'] = {
+          'autoCrop': {
+            'applied': false,
+          }
+        };
+      }
+      
+      return result;
+    } catch (e) {
+      throw ImageProcessingException('Failed to process image with auto-crop: $e');
     }
   }
 
