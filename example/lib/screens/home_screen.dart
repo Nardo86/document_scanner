@@ -239,7 +239,7 @@ class _ShowcaseHomeScreenState extends State<ShowcaseHomeScreen> {
         description: 'Demonstrates MultiPageScannerWidget with page management and PDF export.',
         icon: Icons.menu_book,
         accentColor: Colors.green,
-        routeName: MultiPageShowcaseScreen.routeName,
+        routeName: MultiPageScreen.routeName,
         badges: const ['Multi-page', 'Reorder'],
       ),
       FlowCardData(
