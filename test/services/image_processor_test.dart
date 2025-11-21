@@ -487,6 +487,256 @@ void main() {
         expect(exception, isA<Exception>());
       });
     });
+
+    group('Black & White filter with Otsu thresholding', () {
+      test('preserves readable text on light background', () async {
+        // Create test image with text-like pattern (dark text on light background)
+        final textImage = _createTextLikeImage(200, 200);
+        
+        final options = const ImageEditingOptions(
+          colorFilter: ColorFilter.blackAndWhite,
+        );
+        final result = await imageProcessor.applyImageEditing(textImage, options);
+        
+        expect(result, isA<Uint8List>());
+        expect(result.isNotEmpty, isTrue);
+        
+        // Decode and verify pixel distribution
+        final resultImage = img.decodeImage(result);
+        expect(resultImage, isNotNull);
+        
+        final stats = _analyzePixelDistribution(resultImage!);
+        
+        // Should have both black and white pixels (not uniformly dark)
+        expect(stats['blackPixels'], greaterThan(0));
+        expect(stats['whitePixels'], greaterThan(0));
+        
+        // Should not be completely black (burned)
+        expect(stats['blackPixels'], lessThan(stats['totalPixels']));
+      });
+
+      test('handles dark images without burning to full black', () async {
+        // Create a dark test image
+        final darkImage = _createDarkImage(200, 200);
+        
+        final options = const ImageEditingOptions(
+          colorFilter: ColorFilter.blackAndWhite,
+        );
+        final result = await imageProcessor.applyImageEditing(darkImage, options);
+        
+        expect(result, isA<Uint8List>());
+        expect(result.isNotEmpty, isTrue);
+        
+        // Decode and verify some white pixels exist
+        final resultImage = img.decodeImage(result);
+        expect(resultImage, isNotNull);
+        
+        final stats = _analyzePixelDistribution(resultImage!);
+        
+        // Should have some white pixels, not all black
+        expect(stats['whitePixels'], greaterThan(0));
+      });
+
+      test('uses adaptive threshold based on image content', () async {
+        // Create two different images and verify they use different thresholds
+        final lightImage = _createLightImage(100, 100);
+        final darkImage = _createDarkImage(100, 100);
+        
+        final options = const ImageEditingOptions(
+          colorFilter: ColorFilter.blackAndWhite,
+        );
+        
+        final lightResult = await imageProcessor.applyImageEditing(lightImage, options);
+        final darkResult = await imageProcessor.applyImageEditing(darkImage, options);
+        
+        final lightDecoded = img.decodeImage(lightResult);
+        final darkDecoded = img.decodeImage(darkResult);
+        
+        expect(lightDecoded, isNotNull);
+        expect(darkDecoded, isNotNull);
+        
+        final lightStats = _analyzePixelDistribution(lightDecoded!);
+        final darkStats = _analyzePixelDistribution(darkDecoded!);
+        
+        // Different images should produce different distributions
+        // (proving adaptive thresholding is working)
+        expect(lightStats['blackRatio'], isNot(equals(darkStats['blackRatio'])));
+      });
+
+      test('works with automatic processing (batch mode)', () async {
+        // Test that the improved filter is used in automatic processing
+        final textImage = _createTextLikeImage(200, 200);
+        
+        final options = const DocumentProcessingOptions(
+          convertToGrayscale: true,
+          enhanceContrast: false,
+          autoCorrectPerspective: false,
+        );
+        
+        final result = await imageProcessor.processImage(textImage, options);
+        
+        expect(result, isA<Uint8List>());
+        expect(result.isNotEmpty, isTrue);
+        
+        // Verify the result has reasonable pixel distribution
+        final resultImage = img.decodeImage(result);
+        expect(resultImage, isNotNull);
+        
+        final stats = _analyzePixelDistribution(resultImage!);
+        expect(stats['whitePixels'], greaterThan(0));
+      });
+    });
+
+    group('Enhanced filter with histogram equalization', () {
+      test('increases contrast without desaturating completely', () async {
+        // Create a low contrast color image
+        final lowContrastImage = _createLowContrastImage(200, 200);
+        
+        final options = const ImageEditingOptions(
+          colorFilter: ColorFilter.highContrast,
+        );
+        final result = await imageProcessor.applyImageEditing(lowContrastImage, options);
+        
+        expect(result, isA<Uint8List>());
+        expect(result.isNotEmpty, isTrue);
+        
+        // Decode and verify enhanced contrast
+        final resultImage = img.decodeImage(result);
+        expect(resultImage, isNotNull);
+        
+        final originalImage = img.decodeImage(lowContrastImage);
+        final originalContrast = _calculateImageContrast(originalImage!);
+        final enhancedContrast = _calculateImageContrast(resultImage!);
+        
+        // Enhanced image should have higher contrast
+        expect(enhancedContrast, greaterThan(originalContrast));
+        
+        // Should still have color (not completely desaturated)
+        final colorStats = _analyzeColorPresence(resultImage);
+        expect(colorStats['hasColor'], isTrue);
+      });
+
+      test('prevents over-saturation with clip limit', () async {
+        // Create a varied contrast image (not solid color)
+        final variedImage = _createLowContrastImage(200, 200);
+        
+        final options = const ImageEditingOptions(
+          colorFilter: ColorFilter.highContrast,
+        );
+        final result = await imageProcessor.applyImageEditing(variedImage, options);
+        
+        expect(result, isA<Uint8List>());
+        expect(result.isNotEmpty, isTrue);
+        
+        // Decode and verify the result has improved contrast
+        final resultImage = img.decodeImage(result);
+        expect(resultImage, isNotNull);
+        
+        final originalImage = img.decodeImage(variedImage);
+        final originalContrast = _calculateImageContrast(originalImage!);
+        final enhancedContrast = _calculateImageContrast(resultImage!);
+        
+        // Enhanced should have better contrast
+        expect(enhancedContrast, greaterThan(originalContrast));
+        
+        // Image should still have reasonable distribution (not all extremes)
+        final stats = _analyzePixelDistribution(resultImage);
+        final totalPixels = stats['totalPixels'] as int;
+        final extremePixels = stats['extremePixels'] as int;
+        final extremeRatio = extremePixels / totalPixels;
+        
+        // Most pixels shouldn't be at absolute extremes
+        expect(extremeRatio, lessThan(0.95));
+      });
+
+      test('works with automatic processing (batch mode)', () async {
+        // Test that the improved filter is used in automatic processing
+        final lowContrastImage = _createLowContrastImage(200, 200);
+        
+        final options = const DocumentProcessingOptions(
+          convertToGrayscale: false,
+          enhanceContrast: true,
+          autoCorrectPerspective: false,
+        );
+        
+        final result = await imageProcessor.processImage(lowContrastImage, options);
+        
+        expect(result, isA<Uint8List>());
+        expect(result.isNotEmpty, isTrue);
+        
+        // Verify the result has improved contrast
+        final resultImage = img.decodeImage(result);
+        expect(resultImage, isNotNull);
+        
+        final originalImage = img.decodeImage(lowContrastImage);
+        final originalContrast = _calculateImageContrast(originalImage!);
+        final enhancedContrast = _calculateImageContrast(resultImage!);
+        
+        expect(enhancedContrast, greaterThan(originalContrast));
+      });
+
+      test('processes per-channel without collapsing to gray', () async {
+        // Create a color image
+        final colorImage = _createColorfulImage(100, 100);
+        
+        final options = const ImageEditingOptions(
+          colorFilter: ColorFilter.highContrast,
+        );
+        final result = await imageProcessor.applyImageEditing(colorImage, options);
+        
+        expect(result, isA<Uint8List>());
+        expect(result.isNotEmpty, isTrue);
+        
+        final resultImage = img.decodeImage(result);
+        expect(resultImage, isNotNull);
+        
+        // Verify color is preserved
+        final colorStats = _analyzeColorPresence(resultImage!);
+        expect(colorStats['hasColor'], isTrue);
+        
+        // Should have variance in R, G, B channels
+        expect(colorStats['redVariance'], greaterThan(0));
+        expect(colorStats['greenVariance'], greaterThan(0));
+        expect(colorStats['blueVariance'], greaterThan(0));
+      });
+    });
+
+    group('Filter integration and consistency', () {
+      test('manual editor and batch processing use same algorithms', () async {
+        final testImage = _createTextLikeImage(200, 200);
+        
+        // Test via manual editor
+        final editOptions = const ImageEditingOptions(
+          colorFilter: ColorFilter.blackAndWhite,
+        );
+        final editResult = await imageProcessor.applyImageEditing(testImage, editOptions);
+        
+        // Test via batch processing
+        final batchOptions = const DocumentProcessingOptions(
+          convertToGrayscale: true,
+          enhanceContrast: false,
+          autoCorrectPerspective: false,
+        );
+        final batchResult = await imageProcessor.processImage(testImage, batchOptions);
+        
+        // Both should produce similar results (within reasonable tolerance due to encoding)
+        final editImage = img.decodeImage(editResult);
+        final batchImage = img.decodeImage(batchResult);
+        
+        expect(editImage, isNotNull);
+        expect(batchImage, isNotNull);
+        
+        final editStats = _analyzePixelDistribution(editImage!);
+        final batchStats = _analyzePixelDistribution(batchImage!);
+        
+        // Should have similar black/white ratios
+        final editRatio = editStats['blackRatio'] as double;
+        final batchRatio = batchStats['blackRatio'] as double;
+        
+        // Allow 10% tolerance for encoding differences
+        expect((editRatio - batchRatio).abs(), lessThan(0.1));
+      });
+    });
   });
 }
 
@@ -500,4 +750,209 @@ Uint8List _createTestImage(int width, int height) {
   
   // Encode as JPEG
   return Uint8List.fromList(img.encodeJpg(image, quality: 90));
+}
+
+/// Create a text-like image (dark text on light background)
+Uint8List _createTextLikeImage(int width, int height) {
+  final image = img.Image(width: width, height: height);
+  
+  // Light background (not too bright to allow for black text)
+  img.fill(image, color: img.ColorRgb8(200, 200, 200));
+  
+  // Add substantial "text" areas (dark blocks)
+  for (int y = 20; y < height - 20; y += 30) {
+    for (int x = 20; x < width - 20; x += 50) {
+      // Create larger text blocks
+      for (int dy = 0; dy < 15; dy++) {
+        for (int dx = 0; dx < 30; dx++) {
+          if (y + dy < height && x + dx < width) {
+            image.setPixel(x + dx, y + dy, img.ColorRgb8(30, 30, 30));
+          }
+        }
+      }
+    }
+  }
+  
+  return Uint8List.fromList(img.encodeJpg(image, quality: 95));
+}
+
+/// Create a dark image
+Uint8List _createDarkImage(int width, int height) {
+  final image = img.Image(width: width, height: height);
+  
+  // Dark gray background with some lighter spots
+  img.fill(image, color: img.ColorRgb8(60, 60, 60));
+  
+  // Add some lighter spots
+  for (int y = 0; y < height; y += 20) {
+    for (int x = 0; x < width; x += 20) {
+      image.setPixel(x, y, img.ColorRgb8(120, 120, 120));
+    }
+  }
+  
+  return Uint8List.fromList(img.encodeJpg(image, quality: 90));
+}
+
+/// Create a light image
+Uint8List _createLightImage(int width, int height) {
+  final image = img.Image(width: width, height: height);
+  
+  // Light background with some darker spots
+  img.fill(image, color: img.ColorRgb8(220, 220, 220));
+  
+  // Add some darker spots
+  for (int y = 0; y < height; y += 20) {
+    for (int x = 0; x < width; x += 20) {
+      image.setPixel(x, y, img.ColorRgb8(150, 150, 150));
+    }
+  }
+  
+  return Uint8List.fromList(img.encodeJpg(image, quality: 90));
+}
+
+/// Create a low contrast image
+Uint8List _createLowContrastImage(int width, int height) {
+  final image = img.Image(width: width, height: height);
+  
+  // Mid-gray background with slight color variations (more visible)
+  for (int y = 0; y < height; y++) {
+    for (int x = 0; x < width; x++) {
+      final value = 80 + ((x + y) % 80);
+      // Add more color variation to ensure hasColor is detected
+      image.setPixel(x, y, img.ColorRgb8(value, value + 15, value - 10));
+    }
+  }
+  
+  return Uint8List.fromList(img.encodeJpg(image, quality: 95));
+}
+
+/// Create a colorful image
+Uint8List _createColorfulImage(int width, int height) {
+  final image = img.Image(width: width, height: height);
+  
+  // Create colored stripes
+  for (int y = 0; y < height; y++) {
+    for (int x = 0; x < width; x++) {
+      if (x < width ~/ 3) {
+        image.setPixel(x, y, img.ColorRgb8(200, 50, 50)); // Red
+      } else if (x < 2 * width ~/ 3) {
+        image.setPixel(x, y, img.ColorRgb8(50, 200, 50)); // Green
+      } else {
+        image.setPixel(x, y, img.ColorRgb8(50, 50, 200)); // Blue
+      }
+    }
+  }
+  
+  return Uint8List.fromList(img.encodeJpg(image, quality: 90));
+}
+
+/// Analyze pixel distribution in an image
+Map<String, dynamic> _analyzePixelDistribution(img.Image image) {
+  int blackPixels = 0;
+  int whitePixels = 0;
+  int extremePixels = 0; // Pixels at 0 or 255 in any channel
+  final totalPixels = image.width * image.height;
+  
+  for (int y = 0; y < image.height; y++) {
+    for (int x = 0; x < image.width; x++) {
+      final pixel = image.getPixel(x, y);
+      final r = pixel.r.toInt();
+      final g = pixel.g.toInt();
+      final b = pixel.b.toInt();
+      
+      // Check if it's black (all channels < 50)
+      if (r < 50 && g < 50 && b < 50) {
+        blackPixels++;
+      }
+      
+      // Check if it's white (all channels > 200)
+      if (r > 200 && g > 200 && b > 200) {
+        whitePixels++;
+      }
+      
+      // Check for extreme values
+      if (r == 0 || r == 255 || g == 0 || g == 255 || b == 0 || b == 255) {
+        extremePixels++;
+      }
+    }
+  }
+  
+  return {
+    'totalPixels': totalPixels,
+    'blackPixels': blackPixels,
+    'whitePixels': whitePixels,
+    'extremePixels': extremePixels,
+    'blackRatio': blackPixels / totalPixels,
+    'whiteRatio': whitePixels / totalPixels,
+  };
+}
+
+/// Calculate image contrast (max - min luminance)
+double _calculateImageContrast(img.Image image) {
+  double minLuminance = 255.0;
+  double maxLuminance = 0.0;
+  
+  for (int y = 0; y < image.height; y++) {
+    for (int x = 0; x < image.width; x++) {
+      final pixel = image.getPixel(x, y);
+      final luminance = 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+      
+      if (luminance < minLuminance) minLuminance = luminance;
+      if (luminance > maxLuminance) maxLuminance = luminance;
+    }
+  }
+  
+  return maxLuminance - minLuminance;
+}
+
+/// Analyze color presence in an image
+Map<String, dynamic> _analyzeColorPresence(img.Image image) {
+  double sumR = 0, sumG = 0, sumB = 0;
+  double sumRSq = 0, sumGSq = 0, sumBSq = 0;
+  int count = 0;
+  
+  for (int y = 0; y < image.height; y++) {
+    for (int x = 0; x < image.width; x++) {
+      final pixel = image.getPixel(x, y);
+      final r = pixel.r;
+      final g = pixel.g;
+      final b = pixel.b;
+      
+      sumR += r;
+      sumG += g;
+      sumB += b;
+      
+      sumRSq += r * r;
+      sumGSq += g * g;
+      sumBSq += b * b;
+      
+      count++;
+    }
+  }
+  
+  // Calculate variance for each channel
+  final meanR = sumR / count;
+  final meanG = sumG / count;
+  final meanB = sumB / count;
+  
+  final varianceR = (sumRSq / count) - (meanR * meanR);
+  final varianceG = (sumGSq / count) - (meanG * meanG);
+  final varianceB = (sumBSq / count) - (meanB * meanB);
+  
+  // Check if image has color (channels differ significantly)
+  // More lenient threshold to account for JPEG compression
+  final hasColor = (meanR - meanG).abs() > 3 || 
+                   (meanG - meanB).abs() > 3 || 
+                   (meanR - meanB).abs() > 3 ||
+                   varianceR > 100 || varianceG > 100 || varianceB > 100;
+  
+  return {
+    'hasColor': hasColor,
+    'redVariance': varianceR,
+    'greenVariance': varianceG,
+    'blueVariance': varianceB,
+    'meanR': meanR,
+    'meanG': meanG,
+    'meanB': meanB,
+  };
 }

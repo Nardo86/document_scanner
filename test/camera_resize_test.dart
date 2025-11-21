@@ -1,5 +1,4 @@
 import 'dart:typed_data';
-import 'dart:math' as math;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:document_scanner/src/services/camera_service.dart';

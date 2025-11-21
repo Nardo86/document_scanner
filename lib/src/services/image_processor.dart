@@ -147,6 +147,7 @@ class ImageProcessor {
   }
 
   /// Apply perspective correction to an image using detected corners
+  // ignore: unused_element
   Future<img.Image> _applyPerspectiveCorrection(
     img.Image image, 
     List<Offset> corners,
@@ -256,13 +257,16 @@ class ImageProcessor {
   }
 
   /// Apply color filters based on DocumentProcessingOptions
+  // ignore: unused_element
   img.Image _applyColorFilters(img.Image image, DocumentProcessingOptions options) {
     if (options.convertToGrayscale) {
-      image = img.grayscale(image);
+      // Use proper Otsu thresholding for black & white conversion
+      image = _applyBlackAndWhiteFilter(image);
     }
     
     if (options.enhanceContrast) {
-      image = img.contrast(image, contrast: 1.5);
+      // Use histogram equalization for enhanced contrast
+      image = _applyEnhancedFilter(image);
     }
     
     return image;
@@ -274,23 +278,209 @@ class ImageProcessor {
       case ColorFilter.none:
         return image;
       case ColorFilter.highContrast:
-        return img.contrast(image, contrast: 1.6);
+        return _applyEnhancedFilter(image);
       case ColorFilter.blackAndWhite:
-        final grayscale = img.grayscale(image);
-        // Apply threshold to create black and white effect
-        for (int y = 0; y < grayscale.height; y++) {
-          for (int x = 0; x < grayscale.width; x++) {
-            final pixel = grayscale.getPixel(x, y);
-            final luminance = img.getLuminance(pixel);
-            final threshold = luminance > 128 ? 255 : 0;
-            grayscale.setPixel(x, y, img.ColorRgb8(threshold, threshold, threshold));
-          }
-        }
-        return grayscale;
+        return _applyBlackAndWhiteFilter(image);
     }
   }
 
+  /// Apply black & white filter using Otsu's method for adaptive thresholding
+  /// 
+  /// Uses proper luminance calculation (0.299R + 0.587G + 0.114B) and Otsu's method
+  /// to determine the optimal threshold per image, preserving line work and readable text.
+  img.Image _applyBlackAndWhiteFilter(img.Image image) {
+    // Calculate luminance histogram (0-255)
+    final histogram = List<int>.filled(256, 0);
+    final luminanceMap = <int, List<double>>{}; // Store luminance values for each pixel
+    
+    // First pass: calculate luminance using proper formula and build histogram
+    for (int y = 0; y < image.height; y++) {
+      for (int x = 0; x < image.width; x++) {
+        final pixel = image.getPixel(x, y);
+        final luminance = _calculateLuminance(pixel);
+        final luminanceInt = luminance.round().clamp(0, 255);
+        histogram[luminanceInt]++;
+        
+        final index = y * image.width + x;
+        luminanceMap[index] = [luminance];
+      }
+    }
+    
+    // Calculate Otsu threshold
+    final threshold = _calculateOtsuThreshold(histogram, image.width * image.height);
+    
+    // Second pass: apply threshold
+    final result = img.Image(width: image.width, height: image.height);
+    for (int y = 0; y < image.height; y++) {
+      for (int x = 0; x < image.width; x++) {
+        final index = y * image.width + x;
+        final luminance = luminanceMap[index]![0];
+        final bwValue = luminance > threshold ? 255 : 0;
+        result.setPixel(x, y, img.ColorRgb8(bwValue, bwValue, bwValue));
+      }
+    }
+    
+    return result;
+  }
+
+  /// Apply enhanced filter using histogram equalization with clip limit
+  /// 
+  /// Implements per-channel histogram equalization with a configurable clip limit
+  /// to increase contrast and clarity without washing out the image or causing saturation.
+  img.Image _applyEnhancedFilter(img.Image image) {
+    // Use CLAHE (Contrast Limited Adaptive Histogram Equalization) approach
+    // with a clip limit to prevent over-saturation
+    const clipLimit = 2.0; // Limit for histogram clipping (prevents over-enhancement)
+    
+    // Process each channel separately
+    final result = img.Image(width: image.width, height: image.height);
+    
+    // Build histograms for each channel
+    final histogramR = List<int>.filled(256, 0);
+    final histogramG = List<int>.filled(256, 0);
+    final histogramB = List<int>.filled(256, 0);
+    
+    for (int y = 0; y < image.height; y++) {
+      for (int x = 0; x < image.width; x++) {
+        final pixel = image.getPixel(x, y);
+        histogramR[pixel.r.toInt()]++;
+        histogramG[pixel.g.toInt()]++;
+        histogramB[pixel.b.toInt()]++;
+      }
+    }
+    
+    // Apply clip limit to prevent over-saturation
+    final totalPixels = image.width * image.height;
+    final clipThreshold = (totalPixels * clipLimit / 256).round();
+    
+    _clipHistogram(histogramR, clipThreshold);
+    _clipHistogram(histogramG, clipThreshold);
+    _clipHistogram(histogramB, clipThreshold);
+    
+    // Calculate cumulative distribution functions (CDF) for equalization
+    final cdfR = _calculateCDF(histogramR);
+    final cdfG = _calculateCDF(histogramG);
+    final cdfB = _calculateCDF(histogramB);
+    
+    // Normalize CDFs to create lookup tables
+    final lookupR = _normalizeCDF(cdfR, totalPixels);
+    final lookupG = _normalizeCDF(cdfG, totalPixels);
+    final lookupB = _normalizeCDF(cdfB, totalPixels);
+    
+    // Apply histogram equalization
+    for (int y = 0; y < image.height; y++) {
+      for (int x = 0; x < image.width; x++) {
+        final pixel = image.getPixel(x, y);
+        final newR = lookupR[pixel.r.toInt()];
+        final newG = lookupG[pixel.g.toInt()];
+        final newB = lookupB[pixel.b.toInt()];
+        result.setPixel(x, y, img.ColorRgb8(newR, newG, newB));
+      }
+    }
+    
+    return result;
+  }
+
+  /// Calculate luminance using the standard formula: 0.299R + 0.587G + 0.114B
+  double _calculateLuminance(img.Color pixel) {
+    return 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+  }
+
+  /// Calculate optimal threshold using Otsu's method
+  /// 
+  /// Otsu's method finds the threshold that minimizes intra-class variance
+  /// (or equivalently, maximizes inter-class variance) of the two groups of pixels.
+  int _calculateOtsuThreshold(List<int> histogram, int totalPixels) {
+    // Calculate the total mean
+    double sum = 0;
+    for (int i = 0; i < 256; i++) {
+      sum += i * histogram[i];
+    }
+    
+    double sumB = 0;
+    int weightB = 0;
+    int weightF = 0;
+    
+    double maxVariance = 0;
+    int threshold = 0;
+    
+    for (int i = 0; i < 256; i++) {
+      weightB += histogram[i];
+      if (weightB == 0) continue;
+      
+      weightF = totalPixels - weightB;
+      if (weightF == 0) break;
+      
+      sumB += i * histogram[i];
+      
+      final meanB = sumB / weightB;
+      final meanF = (sum - sumB) / weightF;
+      
+      // Calculate between-class variance
+      final variance = weightB * weightF * (meanB - meanF) * (meanB - meanF);
+      
+      if (variance > maxVariance) {
+        maxVariance = variance;
+        threshold = i;
+      }
+    }
+    
+    return threshold;
+  }
+
+  /// Clip histogram to prevent over-saturation in histogram equalization
+  void _clipHistogram(List<int> histogram, int clipThreshold) {
+    int excess = 0;
+    
+    // Clip values above threshold and accumulate excess
+    for (int i = 0; i < histogram.length; i++) {
+      if (histogram[i] > clipThreshold) {
+        excess += histogram[i] - clipThreshold;
+        histogram[i] = clipThreshold;
+      }
+    }
+    
+    // Redistribute excess evenly across all bins
+    if (excess > 0) {
+      final redistribution = excess ~/ histogram.length;
+      final remainder = excess % histogram.length;
+      
+      for (int i = 0; i < histogram.length; i++) {
+        histogram[i] += redistribution;
+        if (i < remainder) {
+          histogram[i]++;
+        }
+      }
+    }
+  }
+
+  /// Calculate cumulative distribution function from histogram
+  List<int> _calculateCDF(List<int> histogram) {
+    final cdf = List<int>.filled(256, 0);
+    cdf[0] = histogram[0];
+    
+    for (int i = 1; i < 256; i++) {
+      cdf[i] = cdf[i - 1] + histogram[i];
+    }
+    
+    return cdf;
+  }
+
+  /// Normalize CDF to create lookup table for histogram equalization
+  List<int> _normalizeCDF(List<int> cdf, int totalPixels) {
+    final lookup = List<int>.filled(256, 0);
+    final cdfMin = cdf.firstWhere((value) => value > 0);
+    
+    for (int i = 0; i < 256; i++) {
+      // Normalize to 0-255 range
+      lookup[i] = (((cdf[i] - cdfMin) / (totalPixels - cdfMin)) * 255).round().clamp(0, 255);
+    }
+    
+    return lookup;
+  }
+
   /// Apply resolution resizing based on PDF resolution setting
+  // ignore: unused_element
   img.Image _applyResolution(img.Image image, PdfResolution resolution) {
     final maxDimension = _getMaxDimensionForResolution(resolution);
     
@@ -339,6 +529,7 @@ class ImageProcessor {
   }
 
   /// Canny edge detection implementation using Sobel operators
+  // ignore: unused_element
   img.Image _cannyEdgeDetection(img.Image image) {
     // Apply Sobel operators for gradient calculation
     final sobelX = img.sobel(image);
@@ -362,6 +553,7 @@ class ImageProcessor {
   }
 
   /// Find the largest quadrilateral in the edge-detected image
+  // ignore: unused_element
   List<Offset> _findLargestQuadrilateral(img.Image edges, int width, int height) {
     // Simple implementation: find the bounding box of edge pixels
     // In a production implementation, you would use contour detection
@@ -397,6 +589,7 @@ class ImageProcessor {
   }
 
   /// Order corners in consistent order: top-left, top-right, bottom-right, bottom-left
+  // ignore: unused_element
   List<Offset> _orderCorners(List<Offset> corners) {
     if (corners.length != 4) return corners;
     

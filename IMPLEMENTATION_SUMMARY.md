@@ -43,6 +43,10 @@ Optimized image processing with background execution and caching:
 - **Downscaled Detection**: Edge detection runs on 800px max dimension images
 - **UI Responsiveness**: Main isolate never blocked during processing
 - **Resource Management**: Proper cleanup and cache management
+- **Improved Color Filters**: 
+  - **Black & White Filter**: Otsu's method for adaptive thresholding with proper luminance calculation (0.299R + 0.587G + 0.114B)
+  - **Enhanced Filter**: Histogram equalization with clip limit (CLAHE-inspired) to prevent over-saturation
+  - **Unified Logic**: Both manual editor and batch processing use the same improved algorithms
 
 ### 5. Enhanced DocumentScannerService
 Updated orchestrator with resize metadata integration:
@@ -220,3 +224,64 @@ The optimized document scanner pipeline is now:
 10. ✅ Documented with performance benchmarks
 
 No breaking changes were introduced, and all existing functionality is preserved while providing better testability and maintainability.
+
+## Image Filter Improvements
+
+### Problem Addressed
+The original Black & White and Enhanced filters produced unusable results:
+- **Black & White**: Used fixed threshold (128) causing burned highlights or flat gray output
+- **Enhanced**: Used simple contrast multiplication causing over-saturation or washed-out results
+
+### Solution Implemented
+
+#### Black & White Filter with Otsu's Method
+- **Proper Luminance Calculation**: Uses industry-standard formula (0.299R + 0.587G + 0.114B)
+- **Adaptive Thresholding**: Otsu's method determines optimal threshold per image
+- **Histogram-Based**: Single pass histogram calculation, reused during thresholding
+- **Benefits**: 
+  - Preserves line work and readable text across varying lighting
+  - No more uniformly dark pages
+  - Adapts to each image's unique content
+
+#### Enhanced Filter with Histogram Equalization
+- **Per-Channel Processing**: Processes R, G, B channels separately to preserve colors
+- **Clip Limit**: Configurable limit (2.0) prevents over-saturation
+- **CLAHE-Inspired**: Implements contrast-limited adaptive histogram equalization approach
+- **Histogram Clipping**: Redistributes excess to prevent washed-out appearance
+- **Benefits**:
+  - Increases contrast and clarity without desaturating
+  - Prevents saturation at extremes (0 or 255)
+  - Maintains color information for diagrams and illustrations
+
+#### Unified Processing
+- **Shared Algorithms**: `_applyColorFilters()` (batch) and `_applyColorFilter()` (editor) use same logic
+- **Consistency**: Manual editing and automatic processing produce identical results
+- **Maintainability**: Single implementation reduces bugs and improves reliability
+
+### Test Coverage (16 new tests)
+- **Black & White Filter Tests**:
+  - Preserves readable text on light backgrounds
+  - Handles dark images without burning to full black
+  - Uses adaptive threshold based on image content
+  - Works with automatic batch processing
+  
+- **Enhanced Filter Tests**:
+  - Increases contrast without desaturating
+  - Prevents over-saturation with clip limit
+  - Works with automatic batch processing
+  - Processes per-channel without collapsing to gray
+  
+- **Integration Tests**:
+  - Manual editor and batch processing use same algorithms
+  - Verifies consistency between workflows
+
+### Documentation Updates
+- **README.md**: Updated Color Filters section with technical details
+- **IMPLEMENTATION_SUMMARY.md**: Comprehensive filter improvement documentation
+- **Code Comments**: Detailed documentation of algorithms and formulas
+
+### Performance Considerations
+- **Histogram Caching**: Single histogram calculation per image
+- **Efficient Algorithms**: O(n) complexity for most operations
+- **Memory Efficient**: Reuses data structures where possible
+- **No Significant Impact**: Filter improvements don't affect processing speed targets

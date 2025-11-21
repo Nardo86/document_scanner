@@ -148,7 +148,6 @@ void main() {
         final processedImageData = await imageProcessor.processImage(originalImageData, options);
         
         // Decode both images to compare
-        final originalImage = img.decodeImage(originalImageData)!;
         final processedImage = img.decodeImage(processedImageData)!;
         
         // Processed image should exist and have reasonable dimensions
