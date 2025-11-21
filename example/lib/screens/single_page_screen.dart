@@ -1,7 +1,7 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:document_scanner/document_scanner.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../state/showcase_state.dart';
@@ -235,6 +235,7 @@ class _SinglePageScreenState extends State<SinglePageScreen> {
     final filename = state.resolveFilename(_filenameController.text);
 
     try {
+      // Get the initial scan result with raw image data
       final result = useCamera
           ? await _scannerService.scanDocument(
               documentType: _selectedType,
@@ -246,10 +247,29 @@ class _SinglePageScreenState extends State<SinglePageScreen> {
             );
 
       if (!mounted) return;
-      _handleResult(
-        result,
-        flowLabel: useCamera ? 'Single Page (Camera)' : 'Single Page (Gallery)',
-      );
+      
+      if (result.success && result.document != null && result.document!.rawImageData != null) {
+        // Use the shared helper method to show the editor flow
+        final finalResult = await _scannerService.showImageEditorFlow(
+          context: context,
+          document: result.document!,
+          customFilename: filename,
+          processingOptions: result.document!.processingOptions,
+        );
+        
+        if (mounted) {
+          _handleResult(
+            finalResult,
+            flowLabel: useCamera ? 'Single Page (Camera)' : 'Single Page (Gallery)',
+          );
+        }
+      } else {
+        // Handle case where scan failed or no image data is available
+        _handleResult(
+          result,
+          flowLabel: useCamera ? 'Single Page (Camera)' : 'Single Page (Gallery)',
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -269,6 +289,18 @@ class _SinglePageScreenState extends State<SinglePageScreen> {
   }
 
   void _handleResult(ScanResult result, {required String flowLabel}) {
+    // Lightweight logging for debugging (guarded by debug mode)
+    if (kDebugMode) {
+      print('DocumentScanner: $flowLabel - Result: ${result.success ? "SUCCESS" : "FAILED"}');
+      if (result.success) {
+        print('DocumentScanner: Document ID: ${result.document?.id}');
+        print('DocumentScanner: PDF Path: ${result.document?.pdfPath}');
+        print('DocumentScanner: Processed Path: ${result.document?.processedPath}');
+      } else {
+        print('DocumentScanner: Error: ${result.error}');
+      }
+    }
+
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _lastResult = result);
 
