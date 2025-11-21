@@ -640,6 +640,8 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
         MaterialPageRoute(
           builder: (context) => ImageEditingWidget(
             imageData: document.rawImageData!,
+            initialPreviewData: document.processedImageData,
+            initialCropCorners: _extractCornersFromMetadata(document.metadata),
             onImageEdited: (editedData, selectedResolution, selectedFormat) {
               // For multi-page documents, we ignore the individual page resolution/format selection
               // and use the widget's processing options instead
@@ -799,6 +801,25 @@ class _PageReorderDialogState extends State<_PageReorderDialog> {
         ),
       ],
     );
+  }
+
+  /// Extract corners from metadata
+  List<Offset>? _extractCornersFromMetadata(Map<String, dynamic> metadata) {
+    try {
+      final detectedEdges = metadata['detectedEdges'] as List<dynamic>?;
+      if (detectedEdges != null && detectedEdges.isNotEmpty) {
+        return detectedEdges.map((edge) {
+          final edgeMap = edge as Map<String, dynamic>;
+          return Offset(
+            (edgeMap['dx'] as num).toDouble(),
+            (edgeMap['dy'] as num).toDouble(),
+          );
+        }).toList();
+      }
+    } catch (e) {
+      print('Error extracting corners from metadata: $e');
+    }
+    return null;
   }
 }
 
