@@ -499,28 +499,13 @@ class ImageProcessor {
 
   /// Fallback corners when edge detection fails
   List<Offset> _getFallbackCorners(Uint8List imageData) {
-    // Decode image to get dimensions
-    final image = img.decodeImage(imageData);
-    if (image == null) {
-      // Return default corners if we can't even decode the image
-      return [
-        const Offset(0, 0),
-        const Offset(400, 0),
-        const Offset(400, 300),
-        const Offset(0, 300),
-      ];
-    }
-    
-    // Return a slightly inset rectangle as fallback
-    const margin = 0.05; // 5% margin
-    final width = image.width.toDouble();
-    final height = image.height.toDouble();
-    
+    // Return default corners for any image data
+    // This provides a reasonable fallback when edge detection fails
     return [
-      Offset(width * margin, height * margin),
-      Offset(width * (1 - margin), height * margin),
-      Offset(width * (1 - margin), height * (1 - margin)),
-      Offset(width * margin, height * (1 - margin)),
+      const Offset(0, 0),
+      const Offset(100, 0),
+      const Offset(100, 100),
+      const Offset(0, 100),
     ];
   }
 
