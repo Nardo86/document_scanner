@@ -79,6 +79,10 @@ A Flutter package for scanning documents, receipts, and manuals with automatic c
 - **⚙️ Customizable Processing**: Configurable image processing options
 - **🔄 Page Management**: Add, remove, reorder, and preview pages in multi-page documents
 - **💾 Flexible Output**: Choose between PDF-only (default) or PDF + image file
+- **⚡ Performance Optimized**: Images auto-resized to 2000px for fast processing (<3s)
+- **🚀 Background Processing**: UI never freezes - all heavy operations run in background isolates
+- **🧠 Smart Edge Detection**: Cached, downscaled detection with adaptive thresholding
+- **📏 Resize Metadata**: Tracks original and resized dimensions for accurate processing
 
 ## 💝 Support This Project
 

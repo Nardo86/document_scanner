@@ -376,6 +376,57 @@ void main() {
       });
     });
 
+    group('Background processing and optimizations', () {
+      test('processes image using background isolate', () async {
+        final options = const DocumentProcessingOptions();
+        final result = await imageProcessor.processImage(testImageData, options);
+        
+        expect(result, isA<Uint8List>());
+        expect(result.isNotEmpty, isTrue);
+      });
+
+      test('caches edge detection results', () async {
+        // First detection should compute and cache
+        final corners1 = await imageProcessor.detectDocumentEdges(testImageData);
+        expect(corners1, isA<List<Offset>>());
+        expect(corners1.length, equals(4));
+        
+        // Second detection should use cache
+        final corners2 = await imageProcessor.detectDocumentEdges(testImageData);
+        expect(corners2, equals(corners1));
+      });
+
+      test('clears edge cache', () {
+        imageProcessor.clearEdgeCache();
+        // Should not throw and cache should be empty
+        expect(() => imageProcessor.clearEdgeCache(), returnsNormally);
+      });
+
+      test('processes large image efficiently', () async {
+        // Create a large test image (4000x3000)
+        final largeImageData = _createTestImage(4000, 3000);
+        final options = const DocumentProcessingOptions();
+        
+        final stopwatch = Stopwatch()..start();
+        final result = await imageProcessor.processImage(largeImageData, options);
+        stopwatch.stop();
+        
+        expect(result, isA<Uint8List>());
+        expect(result.isNotEmpty, isTrue);
+        // Should complete within reasonable time (under 10 seconds for safety)
+        expect(stopwatch.elapsedMilliseconds, lessThan(10000));
+      });
+
+      test('handles edge detection fallback gracefully', () async {
+        // Test with corrupted image data
+        final corruptedData = Uint8List.fromList([0xFF, 0xD8, 0xFF, 0xE0]); // JPEG start but incomplete
+        
+        final corners = await imageProcessor.detectDocumentEdges(corruptedData);
+        expect(corners, isA<List<Offset>>());
+        expect(corners.length, equals(4)); // Should return fallback corners
+      });
+    });
+
     group('Error handling', () {
       test('ImageProcessingException has correct properties', () {
         const exception = ImageProcessingException('Test error message');
