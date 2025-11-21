@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:document_scanner_example/main.dart';
+import 'package:document_scanner_example/app.dart';
 
 void main() {
   testWidgets('Phase 2 showcase home renders key flows', (tester) async {
