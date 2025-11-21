@@ -293,8 +293,8 @@ The package now includes a comprehensive image editing screen that **automatical
 
 #### Color Filters (Optimized for Document Scanning)
 - **Original**: Keep original colors (default)
-- **Enhanced**: Gentle contrast boost that preserves faded text visibility
-- **B&W**: Document-optimized grayscale with moderate contrast for readability
+- **Enhanced**: Histogram equalization with clip limit to increase contrast and clarity without over-saturation. Uses per-channel processing to preserve colors while boosting visibility of faint text and details.
+- **B&W**: Adaptive black & white conversion using Otsu's method for automatic thresholding. Uses proper luminance calculation (0.299R + 0.587G + 0.114B) to preserve line work and text readability across varying lighting conditions.
 
 #### Cropping with Perspective Correction
 - **Auto-detection**: Automatically detect document boundaries
