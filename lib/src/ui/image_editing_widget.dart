@@ -41,10 +41,11 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
   @override
   void initState() {
     super.initState();
-    _baseImageData = widget.imageData; // Initialize base image
     
     // Use initial preview data if provided, otherwise use original image
+    // This fixes Bug 1: Ensure base and preview images stay synchronized
     _previewImageData = widget.initialPreviewData ?? widget.imageData;
+    _baseImageData = widget.initialPreviewData ?? widget.imageData; // Keep base in sync with preview
     
     // Use initial crop corners if provided, otherwise detect edges
     if (widget.initialCropCorners != null && widget.initialCropCorners!.isNotEmpty) {
@@ -178,13 +179,25 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
         _editingOptions = _editingOptions.copyWith(colorFilter: filter);
         _isProcessing = false;
       });
+      
+      // Show success feedback for filter application
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${_getFilterName(filter)} filter applied'),
+            duration: const Duration(seconds: 1),
+          ),
+        );
+      }
     } catch (e) {
       setState(() {
         _isProcessing = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error applying filter: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error applying filter: $e')),
+        );
+      }
     }
   }
 
@@ -579,6 +592,17 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
     }
   }
 
+  String _getFilterName(ColorFilter filter) {
+    switch (filter) {
+      case ColorFilter.none:
+        return 'Original';
+      case ColorFilter.highContrast:
+        return 'Enhanced';
+      case ColorFilter.blackAndWhite:
+        return 'B&W';
+    }
+  }
+
   IconData _getDocumentFormatIcon(DocumentFormat format) {
     switch (format) {
       case DocumentFormat.auto:
@@ -804,6 +828,7 @@ class _CropInteractiveWidgetState extends State<_CropInteractiveWidget> {
             painter: _CropOverlayPainter(
               corners: _currentCorners,
               imageInfo: widget.imageInfo,
+              draggedCornerIndex: _draggedCornerIndex,
             ),
             child: GestureDetector(
               onPanStart: (details) {
@@ -842,7 +867,7 @@ class _CropInteractiveWidgetState extends State<_CropInteractiveWidget> {
   }
 
   int? _findNearestCorner(Offset position, List<Offset> corners) {
-    const double touchRadius = 30.0;
+    const double touchRadius = 35.0; // Increased for better touch responsiveness
     
     for (int i = 0; i < corners.length; i++) {
       final distance = (position - corners[i]).distance;
@@ -874,10 +899,12 @@ class _CropInteractiveWidgetState extends State<_CropInteractiveWidget> {
 class _CropOverlayPainter extends CustomPainter {
   final List<Offset> corners;
   final ImageDisplayInfo imageInfo;
+  final int? draggedCornerIndex;
 
   _CropOverlayPainter({
     required this.corners,
     required this.imageInfo,
+    this.draggedCornerIndex,
   });
 
   @override
@@ -902,26 +929,44 @@ class _CropOverlayPainter extends CustomPainter {
     canvas.drawPath(cropPath, borderPaint);
 
     // Draw corner handles with enhanced visibility
-    final handlePaint = Paint()
-      ..color = Colors.blue
-      ..style = PaintingStyle.fill;
-
     final centerPaint = Paint()
       ..color = Colors.white
       ..style = PaintingStyle.fill;
 
-    final strokePaint = Paint()
-      ..color = Colors.blue
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
+    final shadowPaint = Paint()
+      ..color = Colors.black.withValues(alpha: 0.3)
+      ..style = PaintingStyle.fill
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2);
 
-    for (final corner in corners) {
+    for (int i = 0; i < corners.length; i++) {
+      final corner = corners[i];
+      final isDragged = i == draggedCornerIndex;
+      
+      // Make dragged corner larger and different color
+      final handleRadius = isDragged ? 20.0 : 16.0;
+      final centerRadius = isDragged ? 10.0 : 8.0;
+      
+      // Use different colors for dragged corner
+      final draggedHandlePaint = Paint()
+        ..color = isDragged ? Colors.orange.withValues(alpha: 0.8) : Colors.blue.withValues(alpha: 0.8)
+        ..style = PaintingStyle.fill;
+
+      final draggedStrokePaint = Paint()
+        ..color = isDragged ? Colors.orange : Colors.blue
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = isDragged ? 4 : 3;
+      
+      // Draw shadow for better visibility
+      canvas.drawCircle(corner + const Offset(2, 2), handleRadius, shadowPaint);
+      
       // Draw outer circle (larger for better touch)
-      canvas.drawCircle(corner, 15, handlePaint);
+      canvas.drawCircle(corner, handleRadius, draggedHandlePaint);
+      
       // Draw inner circle for better visibility
-      canvas.drawCircle(corner, 8, centerPaint);
+      canvas.drawCircle(corner, centerRadius, centerPaint);
+      
       // Draw border around inner circle
-      canvas.drawCircle(corner, 8, strokePaint);
+      canvas.drawCircle(corner, centerRadius, draggedStrokePaint);
     }
 
     // Draw grid lines inside crop area for better alignment
@@ -948,7 +993,19 @@ class _CropOverlayPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+  bool shouldRepaint(covariant CustomPainter oldDelegate) {
+    if (oldDelegate is! _CropOverlayPainter) return true;
+    
+    final oldPainter = oldDelegate;
+    // Repaint if corners changed or if drag state changed
+    if (corners.length != oldPainter.corners.length) return true;
+    
+    for (int i = 0; i < corners.length; i++) {
+      if (corners[i] != oldPainter.corners[i]) return true;
+    }
+    
+    return draggedCornerIndex != oldPainter.draggedCornerIndex;
+  }
 }
 
 /// Helper class to store image display information
