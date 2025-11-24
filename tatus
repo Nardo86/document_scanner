@@ -1,0 +1,27 @@
+[33m6f0343e[m[33m ([m[1;34mgrafted[m[33m, [m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;33mtag: [m[1;33mv2.1.0[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;32mrelease-v2.1.0-push-tag[m[33m)[m Merge pull request #26 from Nardo86/release-bump-2.1.0-auto-crop-ux
+[33m0fc91fb[m[33m ([m[1;31morigin/release-bump-2.1.0-auto-crop-ux[m[33m)[m feat(document_scanner): bump to 2.1.0 and synchronize release docs
+[33m1605977[m Merge pull request #25 from Nardo86/docs/rename-claude-to-agents-modernize
+[33m0996ea1[m[33m ([m[1;31morigin/docs/rename-claude-to-agents-modernize[m[33m)[m docs(agents): rename Claude.md to Agents.md and modernize architecture docs
+[33md27b139[m Merge pull request #24 from Nardo86/feat/example-prioritize-quick-scan-tabs
+[33m05a126d[m[33m ([m[1;31morigin/feat/example-prioritize-quick-scan-tabs[m[33m)[m feat(example/app): prioritize scan tabs with enum-driven navigation
+[33mc08e7ab[m Merge pull request #23 from Nardo86/feat/auto-crop-canny-dilate-warp-integration-e01
+[33m4b1a87f[m[33m ([m[1;31morigin/feat/auto-crop-canny-dilate-warp-integration-e01[m[33m)[m feat(auto-crop): introduce Canny→dilate→largest contour→warp auto-crop pipeline and integrate across capture/import and editor flows
+[33mf047a0f[m Merge pull request #22 from Nardo86/chore/remove-old-home-screen-and-unused-code
+[33m9279c5b[m[33m ([m[1;31morigin/chore/remove-old-home-screen-and-unused-code[m[33m)[m refactor(example): purge obsolete home screen and cleanup dead code
+[33m2eb0fc5[m Merge pull request #21 from Nardo86/feature/pdf-preview-viewer-with-fallback-and-tests
+[33mdfe7858[m[33m ([m[1;31morigin/feature/pdf-preview-viewer-with-fallback-and-tests[m[33m)[m feat(pdf-preview): render real PDF previews using pdfx viewer; support pdfData/pdfPath, add loading/error states and fallback thumbnail; include tests
+[33md7c5658[m Merge pull request #20 from Nardo86/fix/restore-single-editor-quick-action
+[33m5cb851e[m[33m ([m[1;31morigin/fix/restore-single-editor-quick-action[m[33m)[m feat(document-scanner): enable quick-action image editing flow via shared service
+[33ma9803b0[m Merge pull request #19 from Nardo86/fix/imageprocessor-bw-enhanced-otsu-clahe-and-tests
+[33m4544600[m[33m ([m[1;31morigin/fix/imageprocessor-bw-enhanced-otsu-clahe-and-tests[m[33m)[m feat(image_processor): improve B&W and Enhanced color filters with adaptive methods
+[33mbbf1642[m Merge pull request #18 from Nardo86/fix/image-rotation-degrees-90-quarter-turns-tests
+[33mb3edaa7[m[33m ([m[1;31morigin/fix/image-rotation-degrees-90-quarter-turns-tests[m[33m)[m fix(image-rotation): enforce 90-degree steps and apply in degrees
+[33mbcaba29[m Merge pull request #17 from Nardo86/feat/doc-scan-bg-resize-2000px-isolate-edge-cache
+[33m4599128[m[33m ([m[1;31morigin/feat/doc-scan-bg-resize-2000px-isolate-edge-cache[m[33m)[m perf(doc-scanner): resize at capture, isolates processing, cache edges
+[33m75e8f51[m feat(pipeline): speed up document processing by resizing at capture and moving heavy work to background isolates
+[33m65c8eb6[m Merge pull request #16 from Nardo86/release-document-scanner-v2.0.0
+[33m6914424[m[33m ([m[1;31morigin/release-document-scanner-v2.0.0[m[33m)[m chore(release): bump version to 2.0.0 - major rewrite with new architecture
+[33m9be7244[m[33m ([m[1;31morigin/feat/rebuild-processing-pipeline-phase1-imageprocessor-pdfgen-tests[m[33m)[m feat(phase1): image processing and PDF generation with phase-1 workflow
+[33m0627405[m feat(document-processing): introduce Phase 1 processing pipeline for image and PDF generation
+[33madcbe5a[m[33m ([m[1;31morigin/feat/models/refactor-domain-layer-add-tests[m[33m)[m refactor(document_scanner): modularize models and enhance serialization
+[33mc666138[m refactor(models): extract domain models into separate files and enhance serialization
