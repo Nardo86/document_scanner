@@ -39,8 +39,23 @@ While this is an experimental approach, we're committed to:
 
 **We recommend thorough testing in your specific use case before production deployment.**
 
+## 🆕 What's New in 2.1.0
+
+### Enhanced Auto-Crop UX & Pipeline
+- **🎯 Improved Auto-Crop Pipeline**: Advanced Canny→dilate→largest contour→warp pipeline with intelligent fallback support
+- **⚡ Lightning Fast Processing**: Auto-crop processes images in under 100ms with confidence scoring and bounding box fallback
+- **🧠 Smart Edge Detection**: Cached, downscaled detection with adaptive thresholding for optimal performance
+- **📊 Processing Metadata**: Detailed reporting of duration, confidence scores, and fallback usage for transparency
+- **🎨 Enhanced Onboarding**: Improved first-scan experience with contextual guidance and streamlined navigation
+
+### Navigation & UX Improvements
+- **📱 Prioritized Navigation**: Reorganized tabs to prioritize scanning workflows (Quick Scan → Multi Scan → Lab)
+- **🎯 First-Scan Guidance**: Helpful banners and tips appear for new users to guide them through the app
+- **🚀 Streamlined Workflows**: Better integration between scanning, editing, and PDF generation phases
+
 ## 📋 Table of Contents
 
+- [🆕 What's New in 2.1.0](#-whats-new-in-210)
 - [🚀 Vibe Coding Development Philosophy](#-vibe-coding-development-philosophy)
 - [✨ Features](#-features)
 - [💝 Support This Project](#-support-this-project)
