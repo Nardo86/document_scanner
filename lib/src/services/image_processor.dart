@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 import '../models/scanned_document.dart';
@@ -149,39 +150,269 @@ class ImageProcessor {
   }
 
   /// Apply editing options (rotation, colour filter, crop) to an image.
+  ///
+  /// Rotation and colour filters run in an isolate via [compute] to avoid
+  /// blocking the UI thread. Perspective crop still runs on the main thread
+  /// because it needs `dart:ui`.
   Future<Uint8List> applyImageEditing(
     Uint8List imageData,
     ImageEditingOptions editingOptions,
   ) async {
     try {
-      img.Image? image = img.decodeImage(imageData);
+      final normalizedRotation = editingOptions.rotationDegrees % 360;
+      final hasCrop =
+          editingOptions.cropCorners != null &&
+          editingOptions.cropCorners!.length == 4;
+
+      // If only rotation and/or colour filter (no crop), run entirely in
+      // an isolate for maximum responsiveness.
+      if (!hasCrop) {
+        return await compute(_applyEditingInIsolate, {
+          'imageData': imageData,
+          'rotation': normalizedRotation,
+          'colorFilter': editingOptions.colorFilter.index,
+        });
+      }
+
+      // Crop path: decode + rotate in isolate, then perspective crop on
+      // main thread (needs dart:ui), then colour filter in isolate.
+      Uint8List rotatedData = imageData;
+      if (normalizedRotation != 0) {
+        rotatedData = await compute(_rotateInIsolate, {
+          'imageData': imageData,
+          'rotation': normalizedRotation,
+        });
+      }
+
+      img.Image? image = img.decodeImage(rotatedData);
       if (image == null) {
         throw ImageProcessingException('Failed to decode image data');
       }
 
-      // Rotation (normalised to multiples of 90 degrees)
-      final normalizedRotation = editingOptions.rotationDegrees % 360;
-      if (normalizedRotation != 0) {
-        image = img.copyRotate(image, angle: normalizedRotation);
-      }
+      image = await _applyCropWithPerspective(
+        image,
+        editingOptions.cropCorners!,
+        format: editingOptions.documentFormat,
+      );
 
-      // Perspective crop
-      if (editingOptions.cropCorners != null &&
-          editingOptions.cropCorners!.length == 4) {
-        image = await _applyCropWithPerspective(
-          image,
-          editingOptions.cropCorners!,
-          format: editingOptions.documentFormat,
-        );
+      if (editingOptions.colorFilter != ColorFilter.none) {
+        // Encode cropped image and run colour filter in isolate
+        final croppedData = _encodeImage(image, ImageFormat.jpeg, 0.9);
+        return await compute(_applyColorFilterInIsolate, {
+          'imageData': croppedData,
+          'colorFilter': editingOptions.colorFilter.index,
+        });
       }
-
-      // Colour filter
-      image = _applyColorFilter(image, editingOptions.colorFilter);
 
       return _encodeImage(image, ImageFormat.jpeg, 0.9);
     } catch (e) {
       throw ImageProcessingException('Failed to apply image editing: $e');
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Isolate entry points (must be top-level or static)
+  // -------------------------------------------------------------------------
+
+  static Uint8List _rotateInIsolate(Map<String, dynamic> params) {
+    final imageData = params['imageData'] as Uint8List;
+    final rotation = params['rotation'] as int;
+
+    img.Image? image = img.decodeImage(imageData);
+    if (image == null) throw Exception('Failed to decode image');
+
+    image = img.copyRotate(image, angle: rotation);
+    return Uint8List.fromList(img.encodeJpg(image, quality: 90));
+  }
+
+  static Uint8List _applyColorFilterInIsolate(Map<String, dynamic> params) {
+    final imageData = params['imageData'] as Uint8List;
+    final filterIndex = params['colorFilter'] as int;
+    final filter = ColorFilter.values[filterIndex];
+
+    img.Image? image = img.decodeImage(imageData);
+    if (image == null) throw Exception('Failed to decode image');
+
+    image = _applyColorFilterStatic(image, filter);
+    return Uint8List.fromList(img.encodeJpg(image, quality: 90));
+  }
+
+  static Uint8List _applyEditingInIsolate(Map<String, dynamic> params) {
+    final imageData = params['imageData'] as Uint8List;
+    final rotation = params['rotation'] as int;
+    final filterIndex = params['colorFilter'] as int;
+    final filter = ColorFilter.values[filterIndex];
+
+    img.Image? image = img.decodeImage(imageData);
+    if (image == null) throw Exception('Failed to decode image');
+
+    if (rotation != 0) {
+      image = img.copyRotate(image, angle: rotation);
+    }
+
+    image = _applyColorFilterStatic(image, filter);
+    return Uint8List.fromList(img.encodeJpg(image, quality: 90));
+  }
+
+  /// Static colour filter dispatcher (usable from isolates).
+  static img.Image _applyColorFilterStatic(
+    img.Image image,
+    ColorFilter filter,
+  ) {
+    switch (filter) {
+      case ColorFilter.none:
+        return image;
+      case ColorFilter.highContrast:
+        return _applyEnhancedFilterStatic(image);
+      case ColorFilter.blackAndWhite:
+        return _applyBlackAndWhiteFilterStatic(image);
+    }
+  }
+
+  /// Static B&W filter using Otsu's method (usable from isolates).
+  static img.Image _applyBlackAndWhiteFilterStatic(img.Image image) {
+    final histogram = List<int>.filled(256, 0);
+    final totalPixels = image.width * image.height;
+    final luminanceValues = Float64List(totalPixels);
+
+    int idx = 0;
+    for (int y = 0; y < image.height; y++) {
+      for (int x = 0; x < image.width; x++) {
+        final pixel = image.getPixel(x, y);
+        final lum = 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+        luminanceValues[idx++] = lum;
+        histogram[lum.round().clamp(0, 255)]++;
+      }
+    }
+
+    final threshold = _calculateOtsuThresholdStatic(histogram, totalPixels);
+
+    final result = img.Image(width: image.width, height: image.height);
+    idx = 0;
+    for (int y = 0; y < image.height; y++) {
+      for (int x = 0; x < image.width; x++) {
+        final v = luminanceValues[idx++] > threshold ? 255 : 0;
+        result.setPixel(x, y, img.ColorRgb8(v, v, v));
+      }
+    }
+    return result;
+  }
+
+  /// Static enhanced filter using per-channel histogram equalization.
+  static img.Image _applyEnhancedFilterStatic(img.Image image) {
+    const clipLimit = 2.0;
+
+    final histR = List<int>.filled(256, 0);
+    final histG = List<int>.filled(256, 0);
+    final histB = List<int>.filled(256, 0);
+
+    for (int y = 0; y < image.height; y++) {
+      for (int x = 0; x < image.width; x++) {
+        final p = image.getPixel(x, y);
+        histR[p.r.toInt()]++;
+        histG[p.g.toInt()]++;
+        histB[p.b.toInt()]++;
+      }
+    }
+
+    final totalPixels = image.width * image.height;
+    final clipThreshold = (totalPixels * clipLimit / 256).round();
+
+    _clipHistogramStatic(histR, clipThreshold);
+    _clipHistogramStatic(histG, clipThreshold);
+    _clipHistogramStatic(histB, clipThreshold);
+
+    final lookupR = _buildEqualizationLookupStatic(histR, totalPixels);
+    final lookupG = _buildEqualizationLookupStatic(histG, totalPixels);
+    final lookupB = _buildEqualizationLookupStatic(histB, totalPixels);
+
+    final result = img.Image(width: image.width, height: image.height);
+    for (int y = 0; y < image.height; y++) {
+      for (int x = 0; x < image.width; x++) {
+        final p = image.getPixel(x, y);
+        result.setPixel(
+          x,
+          y,
+          img.ColorRgb8(
+            lookupR[p.r.toInt()],
+            lookupG[p.g.toInt()],
+            lookupB[p.b.toInt()],
+          ),
+        );
+      }
+    }
+    return result;
+  }
+
+  static int _calculateOtsuThresholdStatic(
+    List<int> histogram,
+    int totalPixels,
+  ) {
+    double sum = 0;
+    for (int i = 0; i < 256; i++) {
+      sum += i * histogram[i];
+    }
+
+    double sumB = 0;
+    int weightB = 0;
+    double maxVariance = 0;
+    int threshold = 0;
+
+    for (int i = 0; i < 256; i++) {
+      weightB += histogram[i];
+      if (weightB == 0) continue;
+      final weightF = totalPixels - weightB;
+      if (weightF == 0) break;
+
+      sumB += i * histogram[i];
+      final meanB = sumB / weightB;
+      final meanF = (sum - sumB) / weightF;
+      final variance = weightB * weightF * (meanB - meanF) * (meanB - meanF);
+
+      if (variance > maxVariance) {
+        maxVariance = variance;
+        threshold = i;
+      }
+    }
+    return threshold;
+  }
+
+  static void _clipHistogramStatic(List<int> histogram, int clipThreshold) {
+    int excess = 0;
+    for (int i = 0; i < histogram.length; i++) {
+      if (histogram[i] > clipThreshold) {
+        excess += histogram[i] - clipThreshold;
+        histogram[i] = clipThreshold;
+      }
+    }
+    if (excess > 0) {
+      final redistribution = excess ~/ histogram.length;
+      final remainder = excess % histogram.length;
+      for (int i = 0; i < histogram.length; i++) {
+        histogram[i] += redistribution;
+        if (i < remainder) histogram[i]++;
+      }
+    }
+  }
+
+  static List<int> _buildEqualizationLookupStatic(
+    List<int> histogram,
+    int totalPixels,
+  ) {
+    final cdf = List<int>.filled(256, 0);
+    cdf[0] = histogram[0];
+    for (int i = 1; i < 256; i++) {
+      cdf[i] = cdf[i - 1] + histogram[i];
+    }
+
+    final cdfMin = cdf.firstWhere((v) => v > 0);
+    final lookup = List<int>.filled(256, 0);
+    for (int i = 0; i < 256; i++) {
+      lookup[i] = (((cdf[i] - cdfMin) / (totalPixels - cdfMin)) * 255)
+          .round()
+          .clamp(0, 255);
+    }
+    return lookup;
   }
 
   /// Detect document edges with caching.
@@ -265,165 +496,6 @@ class ImageProcessor {
   // -------------------------------------------------------------------------
   // Colour filters
   // -------------------------------------------------------------------------
-
-  img.Image _applyColorFilter(img.Image image, ColorFilter filter) {
-    switch (filter) {
-      case ColorFilter.none:
-        return image;
-      case ColorFilter.highContrast:
-        return _applyEnhancedFilter(image);
-      case ColorFilter.blackAndWhite:
-        return _applyBlackAndWhiteFilter(image);
-    }
-  }
-
-  /// Black & white filter using Otsu's method for adaptive thresholding.
-  img.Image _applyBlackAndWhiteFilter(img.Image image) {
-    final histogram = List<int>.filled(256, 0);
-    final totalPixels = image.width * image.height;
-    final luminanceValues = Float64List(totalPixels);
-
-    // Single pass: compute luminance histogram
-    int idx = 0;
-    for (int y = 0; y < image.height; y++) {
-      for (int x = 0; x < image.width; x++) {
-        final pixel = image.getPixel(x, y);
-        final lum = 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
-        luminanceValues[idx++] = lum;
-        histogram[lum.round().clamp(0, 255)]++;
-      }
-    }
-
-    final threshold = _calculateOtsuThreshold(histogram, totalPixels);
-
-    // Apply threshold
-    final result = img.Image(width: image.width, height: image.height);
-    idx = 0;
-    for (int y = 0; y < image.height; y++) {
-      for (int x = 0; x < image.width; x++) {
-        final v = luminanceValues[idx++] > threshold ? 255 : 0;
-        result.setPixel(x, y, img.ColorRgb8(v, v, v));
-      }
-    }
-    return result;
-  }
-
-  /// Enhanced filter using per-channel histogram equalization with clip limit.
-  img.Image _applyEnhancedFilter(img.Image image) {
-    const clipLimit = 2.0;
-
-    final histR = List<int>.filled(256, 0);
-    final histG = List<int>.filled(256, 0);
-    final histB = List<int>.filled(256, 0);
-
-    for (int y = 0; y < image.height; y++) {
-      for (int x = 0; x < image.width; x++) {
-        final p = image.getPixel(x, y);
-        histR[p.r.toInt()]++;
-        histG[p.g.toInt()]++;
-        histB[p.b.toInt()]++;
-      }
-    }
-
-    final totalPixels = image.width * image.height;
-    final clipThreshold = (totalPixels * clipLimit / 256).round();
-
-    _clipHistogram(histR, clipThreshold);
-    _clipHistogram(histG, clipThreshold);
-    _clipHistogram(histB, clipThreshold);
-
-    final lookupR = _buildEqualizationLookup(histR, totalPixels);
-    final lookupG = _buildEqualizationLookup(histG, totalPixels);
-    final lookupB = _buildEqualizationLookup(histB, totalPixels);
-
-    final result = img.Image(width: image.width, height: image.height);
-    for (int y = 0; y < image.height; y++) {
-      for (int x = 0; x < image.width; x++) {
-        final p = image.getPixel(x, y);
-        result.setPixel(
-          x,
-          y,
-          img.ColorRgb8(
-            lookupR[p.r.toInt()],
-            lookupG[p.g.toInt()],
-            lookupB[p.b.toInt()],
-          ),
-        );
-      }
-    }
-    return result;
-  }
-
-  // -------------------------------------------------------------------------
-  // Histogram helpers
-  // -------------------------------------------------------------------------
-
-  int _calculateOtsuThreshold(List<int> histogram, int totalPixels) {
-    double sum = 0;
-    for (int i = 0; i < 256; i++) {
-      sum += i * histogram[i];
-    }
-
-    double sumB = 0;
-    int weightB = 0;
-    double maxVariance = 0;
-    int threshold = 0;
-
-    for (int i = 0; i < 256; i++) {
-      weightB += histogram[i];
-      if (weightB == 0) continue;
-      final weightF = totalPixels - weightB;
-      if (weightF == 0) break;
-
-      sumB += i * histogram[i];
-      final meanB = sumB / weightB;
-      final meanF = (sum - sumB) / weightF;
-      final variance = weightB * weightF * (meanB - meanF) * (meanB - meanF);
-
-      if (variance > maxVariance) {
-        maxVariance = variance;
-        threshold = i;
-      }
-    }
-    return threshold;
-  }
-
-  void _clipHistogram(List<int> histogram, int clipThreshold) {
-    int excess = 0;
-    for (int i = 0; i < histogram.length; i++) {
-      if (histogram[i] > clipThreshold) {
-        excess += histogram[i] - clipThreshold;
-        histogram[i] = clipThreshold;
-      }
-    }
-    if (excess > 0) {
-      final redistribution = excess ~/ histogram.length;
-      final remainder = excess % histogram.length;
-      for (int i = 0; i < histogram.length; i++) {
-        histogram[i] += redistribution;
-        if (i < remainder) histogram[i]++;
-      }
-    }
-  }
-
-  List<int> _buildEqualizationLookup(List<int> histogram, int totalPixels) {
-    // CDF
-    final cdf = List<int>.filled(256, 0);
-    cdf[0] = histogram[0];
-    for (int i = 1; i < 256; i++) {
-      cdf[i] = cdf[i - 1] + histogram[i];
-    }
-
-    // Normalise
-    final cdfMin = cdf.firstWhere((v) => v > 0);
-    final lookup = List<int>.filled(256, 0);
-    for (int i = 0; i < 256; i++) {
-      lookup[i] = (((cdf[i] - cdfMin) / (totalPixels - cdfMin)) * 255)
-          .round()
-          .clamp(0, 255);
-    }
-    return lookup;
-  }
 
   // -------------------------------------------------------------------------
   // Perspective / crop

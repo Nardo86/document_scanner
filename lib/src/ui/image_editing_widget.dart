@@ -71,11 +71,44 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
       final corners = await _imageProcessor.detectDocumentEdges(
         widget.imageData,
       );
+      if (!mounted) return;
+      if (corners.isNotEmpty) {
+        setState(() {
+          _detectedCorners = corners;
+        });
+        return;
+      }
+    } catch (_) {
+      if (!mounted) return;
+      // Fall through to proportional fallback
+    }
+
+    // Fallback: use proportional corners (5% inset from edges)
+    await _setProportionalFallbackCorners();
+  }
+
+  Future<void> _setProportionalFallbackCorners() async {
+    if (!mounted) return;
+    try {
+      final codec = await ui.instantiateImageCodec(widget.imageData);
+      final frame = await codec.getNextFrame();
+      final w = frame.image.width.toDouble();
+      final h = frame.image.height.toDouble();
+      frame.image.dispose();
+
+      if (!mounted) return;
+      final inset = 0.05; // 5% inset from edges
       setState(() {
-        _detectedCorners = corners;
+        _detectedCorners = [
+          Offset(w * inset, h * inset),
+          Offset(w * (1 - inset), h * inset),
+          Offset(w * (1 - inset), h * (1 - inset)),
+          Offset(w * inset, h * (1 - inset)),
+        ];
       });
     } catch (_) {
-      // Fallback to default corners if detection fails
+      if (!mounted) return;
+      // Last resort: use small absolute corners
       setState(() {
         _detectedCorners = [
           const Offset(50, 50),
@@ -153,10 +186,21 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
         rotationOptions,
       );
 
+      // Re-apply the current color filter if one was selected
+      Uint8List previewData = rotatedData;
+      if (_editingOptions.colorFilter != ColorFilter.none) {
+        final filterOptions = ImageEditingOptions(
+          colorFilter: _editingOptions.colorFilter,
+        );
+        previewData = await _imageProcessor.applyImageEditing(
+          rotatedData,
+          filterOptions,
+        );
+      }
+
       setState(() {
-        _baseImageData = rotatedData; // Update base image after rotation
-        _previewImageData = rotatedData; // Update preview to show rotated image
-        // Update total rotation for tracking
+        _baseImageData = rotatedData;
+        _previewImageData = previewData;
         _editingOptions = _editingOptions.copyWith(
           rotationDegrees: rotationDegrees,
         );
@@ -243,20 +287,31 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
     });
 
     try {
-      // Apply crop to current preview image using original coordinates
-      // We need to convert coordinates from original image space to current preview space
+      // Apply crop to original image using original-space coordinates
       final cropOptions = ImageEditingOptions(
         cropCorners: _detectedCorners,
         documentFormat: _editingOptions.documentFormat,
       );
       final croppedData = await _imageProcessor.applyImageEditing(
-        widget.imageData, // Use original image for crop coordinates
+        widget.imageData,
         cropOptions,
       );
 
+      // Re-apply the current color filter if one was selected
+      Uint8List previewData = croppedData;
+      if (_editingOptions.colorFilter != ColorFilter.none) {
+        final filterOptions = ImageEditingOptions(
+          colorFilter: _editingOptions.colorFilter,
+        );
+        previewData = await _imageProcessor.applyImageEditing(
+          croppedData,
+          filterOptions,
+        );
+      }
+
       setState(() {
-        _previewImageData = croppedData;
-        _baseImageData = croppedData; // Update base image after crop
+        _previewImageData = previewData;
+        _baseImageData = croppedData;
         _showCropOverlay = false;
         _editingOptions = _editingOptions.copyWith(
           cropCorners: _detectedCorners,
@@ -335,8 +390,7 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
                     : _previewImageData != null
                     ? _showCropOverlay && _detectedCorners != null
                           ? CropOverlayWidget(
-                              imageData: widget
-                                  .imageData, // Use original image data for overlay
+                              imageData: _baseImageData ?? widget.imageData,
                               corners: _detectedCorners!,
                               onCornersChanged: (newCorners) {
                                 setState(() {

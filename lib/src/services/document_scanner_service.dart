@@ -481,14 +481,34 @@ class DocumentScannerService {
       Uint8List? processedImageData;
       Map<String, dynamic>? autoCropMetadata;
 
+      List<Offset>? detectedEdges;
+
       if (options.autoCorrectPerspective) {
         try {
+          // For the editor path, only auto-crop without color changes.
+          // The user controls filters interactively in the editor.
+          final editorCropOptions = DocumentProcessingOptions(
+            convertToGrayscale: false,
+            enhanceContrast: false,
+            autoCorrectPerspective: true,
+            compressionQuality: options.compressionQuality,
+            outputFormat: options.outputFormat,
+            generatePdf: options.generatePdf,
+            saveImageFile: options.saveImageFile,
+            pdfResolution: options.pdfResolution,
+            documentFormat: options.documentFormat,
+            customFilename: options.customFilename,
+          );
           final processingResult = await _imageProcessor
-              .processImageWithAutoCrop(captureResult.imageData!, options);
+              .processImageWithAutoCrop(
+                captureResult.imageData!,
+                editorCropOptions,
+              );
           processedImageData =
               processingResult['processedImageData'] as Uint8List;
           autoCropMetadata =
               processingResult['metadata'] as Map<String, dynamic>;
+          detectedEdges = processingResult['detectedEdges'] as List<Offset>?;
         } catch (_) {
           // Auto-crop failure is non-fatal; continue with original image
         }
@@ -500,6 +520,10 @@ class DocumentScannerService {
         if (captureResult.resizeInfo != null)
           ...captureResult.resizeInfo!.toMetadata(),
         if (autoCropMetadata != null) ...autoCropMetadata,
+        if (detectedEdges != null && detectedEdges.isNotEmpty)
+          'detectedEdges': detectedEdges
+              .map((o) => {'dx': o.dx, 'dy': o.dy})
+              .toList(),
       };
 
       final document = ScannedDocument(
