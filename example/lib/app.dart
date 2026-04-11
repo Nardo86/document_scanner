@@ -6,8 +6,6 @@ import 'screens/pdf_preview_screen.dart';
 import 'screens/single_page_screen.dart';
 import 'state/showcase_state.dart';
 
-enum _ShowcaseTab { quickScan, multiScan, lab }
-
 class DocumentScannerShowcaseApp extends StatefulWidget {
   const DocumentScannerShowcaseApp({super.key});
 
