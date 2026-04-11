@@ -267,7 +267,10 @@ void main() {
         expect(find.byType(Column), findsWidgets);
         expect(find.byType(Center), findsWidgets);
         // Only the "Scan First Page" ElevatedButton exists in the initial view
-        expect(find.byType(ElevatedButton), findsOneWidget);
+        expect(
+          find.byWidgetPredicate((w) => w is ElevatedButton),
+          findsOneWidget,
+        );
       });
     });
 
@@ -300,7 +303,10 @@ void main() {
         await tester.pumpWidget(createTestWidget());
 
         // One ElevatedButton ("Scan First Page") in the initial view
-        expect(find.byType(ElevatedButton), findsOneWidget);
+        expect(
+          find.byWidgetPredicate((w) => w is ElevatedButton),
+          findsOneWidget,
+        );
         // No IconButtons in the AppBar actions when there are no pages
         expect(find.byType(IconButton), findsNothing);
       });

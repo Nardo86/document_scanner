@@ -31,15 +31,15 @@ class PdfPreviewWidget extends StatefulWidget {
 
 class _PdfPreviewWidgetState extends State<PdfPreviewWidget> {
   String? _error;
-  late Future<PdfDocument> _documentFuture;
-  late PdfController _pdfController;
-  bool _pdfLoading = false;
+  PdfController? _pdfController;
 
   @override
   void initState() {
     super.initState();
-    _documentFuture = _loadPdf();
-    _pdfController = PdfController(document: _documentFuture);
+    if (widget.pdfData != null ||
+        (widget.pdfPath != null && widget.pdfPath!.isNotEmpty)) {
+      _loadPdfDocument();
+    }
   }
 
   @override
@@ -47,18 +47,17 @@ class _PdfPreviewWidgetState extends State<PdfPreviewWidget> {
     super.dispose();
   }
 
-  Future<PdfDocument> _loadPdf() async {
+  Future<void> _loadPdfDocument() async {
     setState(() {
-      _pdfLoading = true;
       _error = null;
     });
 
     try {
-      PdfDocument? document;
+      PdfDocument document;
 
       if (widget.pdfData != null) {
         document = await PdfDocument.openData(widget.pdfData!);
-      } else if (widget.pdfPath != null && widget.pdfPath!.isNotEmpty) {
+      } else {
         final file = File(widget.pdfPath!);
         if (!await file.exists()) {
           throw Exception('PDF file not found at path: ${widget.pdfPath}');
@@ -68,22 +67,15 @@ class _PdfPreviewWidgetState extends State<PdfPreviewWidget> {
 
       if (mounted) {
         setState(() {
-          _pdfLoading = false;
+          _pdfController = PdfController(document: Future.value(document));
         });
       }
-
-      if (document == null) {
-        throw Exception('No PDF data provided');
-      }
-      return document;
     } catch (e) {
       if (mounted) {
         setState(() {
           _error = 'Failed to load PDF: ${e.toString()}';
-          _pdfLoading = false;
         });
       }
-      rethrow;
     }
   }
 
@@ -215,40 +207,19 @@ class _PdfPreviewWidgetState extends State<PdfPreviewWidget> {
       return _buildErrorState();
     }
 
-    if (widget.pdfData == null && widget.pdfPath == null) {
-      return _buildNoDataState();
-    }
-
-    if (_pdfLoading) {
+    if (_pdfController == null) {
+      if (widget.pdfData == null && widget.pdfPath == null) {
+        return _buildNoDataState();
+      }
       return _buildLoadingState();
     }
 
-    return FutureBuilder<PdfDocument>(
-      future: _documentFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return _buildLoadingState();
-        }
-
-        if (snapshot.hasError) {
-          setState(() {
-            _error = 'Error: ${snapshot.error}';
-          });
-          return _buildErrorState();
-        }
-
-        if (!snapshot.hasData) {
-          return _buildNoDataState();
-        }
-
-        return _buildPdfViewer();
-      },
-    );
+    return _buildPdfViewer();
   }
 
   Widget _buildPdfViewer() {
     return PdfView(
-      controller: _pdfController,
+      controller: _pdfController!,
       scrollDirection: Axis.vertical,
       onDocumentError: (error) {
         setState(() {
@@ -385,11 +356,9 @@ class _PdfPreviewWidgetState extends State<PdfPreviewWidget> {
                     onPressed: () {
                       setState(() {
                         _error = null;
-                        _documentFuture = _loadPdf();
-                        _pdfController = PdfController(
-                          document: _documentFuture,
-                        );
+                        _pdfController = null;
                       });
+                      _loadPdfDocument();
                     },
                     icon: const Icon(Icons.refresh),
                     label: const Text('Retry'),
