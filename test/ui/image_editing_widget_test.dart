@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
 import 'package:document_scanner/document_scanner.dart';
 
 void main() {
@@ -8,9 +9,11 @@ void main() {
     late Uint8List testImageData;
 
     setUp(() {
-      // Minimal test data — image processing will fail gracefully and show a
-      // SnackBar; the widget structure under test is still fully rendered.
-      testImageData = Uint8List.fromList([0]);
+      // Generate a real 10x10 grey JPEG so Image.memory() can decode it
+      // without throwing "Invalid image data".
+      final testImg = img.Image(width: 10, height: 10);
+      img.fill(testImg, color: img.ColorRgb8(128, 128, 128));
+      testImageData = Uint8List.fromList(img.encodeJpg(testImg));
     });
 
     Widget createTestWidget({
@@ -18,13 +21,13 @@ void main() {
       Function(Uint8List, PdfResolution, DocumentFormat)? onImageEdited,
       VoidCallback? onCancel,
     }) {
+      // ImageEditingWidget already returns a Scaffold; wrap only in MaterialApp
+      // (no outer Scaffold) to avoid nested-Scaffold issues with ScaffoldMessenger.
       return MaterialApp(
-        home: Scaffold(
-          body: ImageEditingWidget(
-            imageData: imageData,
-            onImageEdited: onImageEdited ?? (data, resolution, format) {},
-            onCancel: onCancel ?? () {},
-          ),
+        home: ImageEditingWidget(
+          imageData: imageData,
+          onImageEdited: onImageEdited ?? (data, resolution, format) {},
+          onCancel: onCancel ?? () {},
         ),
       );
     }
@@ -33,8 +36,8 @@ void main() {
       WidgetTester tester,
     ) async {
       await tester.pumpWidget(createTestWidget(imageData: testImageData));
+      await tester.pump();
 
-      // Check for main control buttons (image may fail to load but controls should be visible)
       expect(find.byIcon(Icons.rotate_left), findsOneWidget);
       expect(find.byIcon(Icons.rotate_right), findsOneWidget);
       expect(find.byIcon(Icons.crop), findsOneWidget);
@@ -42,17 +45,15 @@ void main() {
 
     testWidgets('should have rotation controls', (WidgetTester tester) async {
       await tester.pumpWidget(createTestWidget(imageData: testImageData));
+      await tester.pump();
 
       expect(find.byIcon(Icons.rotate_left), findsOneWidget);
       expect(find.byIcon(Icons.rotate_right), findsOneWidget);
 
-      // Test rotation left — image processing throws with invalid data, but the
-      // widget handles the error and stays stable.
       await tester.tap(find.byIcon(Icons.rotate_left));
       await tester.pump();
       await tester.pump(const Duration(seconds: 1));
 
-      // Test rotation right
       await tester.tap(find.byIcon(Icons.rotate_right));
       await tester.pump();
       await tester.pump(const Duration(seconds: 1));
@@ -62,17 +63,14 @@ void main() {
       WidgetTester tester,
     ) async {
       await tester.pumpWidget(createTestWidget(imageData: testImageData));
+      await tester.pump();
 
-      // Tap rotate right 4 times (360 degrees).
-      // Use pump() instead of pumpAndSettle() because async image processing
-      // may never fully settle with invalid test data.
       for (int i = 0; i < 4; i++) {
         await tester.tap(find.byIcon(Icons.rotate_right));
         await tester.pump();
         await tester.pump(const Duration(seconds: 1));
       }
 
-      // After 4 rotations the controls are still present.
       expect(find.byIcon(Icons.rotate_right), findsOneWidget);
     });
 
@@ -80,13 +78,12 @@ void main() {
       WidgetTester tester,
     ) async {
       await tester.pumpWidget(createTestWidget(imageData: testImageData));
+      await tester.pump();
 
-      // Rotate right once.
       await tester.tap(find.byIcon(Icons.rotate_right));
       await tester.pump();
       await tester.pump(const Duration(seconds: 1));
 
-      // Rotate left once (should return to original).
       await tester.tap(find.byIcon(Icons.rotate_left));
       await tester.pump();
       await tester.pump(const Duration(seconds: 1));
@@ -97,14 +94,15 @@ void main() {
 
     testWidgets('should have crop controls', (WidgetTester tester) async {
       await tester.pumpWidget(createTestWidget(imageData: testImageData));
+      await tester.pump();
 
       expect(find.byIcon(Icons.crop), findsOneWidget);
 
-      // Test enabling crop mode.
+      // Enable crop mode.
       await tester.tap(find.byIcon(Icons.crop));
       await tester.pump();
 
-      // Should show crop_free icon (disable crop) when crop mode is enabled.
+      // When crop mode is active the icon switches to crop_free.
       expect(find.byIcon(Icons.crop_free), findsOneWidget);
     });
 
@@ -112,22 +110,21 @@ void main() {
       WidgetTester tester,
     ) async {
       await tester.pumpWidget(createTestWidget(imageData: testImageData));
+      await tester.pump();
 
-      // Initially settings should be collapsed.
+      // Initially settings panel is collapsed.
       expect(find.text('Settings'), findsNothing);
 
-      // Tap the settings icon button to expand.
+      // Tap the dedicated settings button to expand.
       await tester.tap(find.byTooltip('Show All Settings'));
       await tester.pump();
 
-      // Settings should now be expanded.
       expect(find.text('Settings'), findsOneWidget);
 
       // Tap the collapse button.
       await tester.tap(find.byTooltip('Collapse Settings'));
       await tester.pump();
 
-      // Settings should be collapsed again.
       expect(find.text('Settings'), findsNothing);
     });
 
@@ -135,8 +132,8 @@ void main() {
       WidgetTester tester,
     ) async {
       await tester.pumpWidget(createTestWidget(imageData: testImageData));
+      await tester.pump();
 
-      // Expand settings via tooltip to avoid GestureDetector interference.
       await tester.tap(find.byTooltip('Show All Settings'));
       await tester.pump();
 
@@ -150,8 +147,8 @@ void main() {
       WidgetTester tester,
     ) async {
       await tester.pumpWidget(createTestWidget(imageData: testImageData));
+      await tester.pump();
 
-      // Expand settings.
       await tester.tap(find.byTooltip('Show All Settings'));
       await tester.pump();
 
@@ -166,8 +163,8 @@ void main() {
       WidgetTester tester,
     ) async {
       await tester.pumpWidget(createTestWidget(imageData: testImageData));
+      await tester.pump();
 
-      // Expand settings.
       await tester.tap(find.byTooltip('Show All Settings'));
       await tester.pump();
 
@@ -181,6 +178,7 @@ void main() {
       WidgetTester tester,
     ) async {
       await tester.pumpWidget(createTestWidget(imageData: testImageData));
+      await tester.pump();
 
       // Collapsed view shows compact indicators and the settings button.
       expect(find.text('Filter'), findsOneWidget);
@@ -191,28 +189,25 @@ void main() {
 
     testWidgets('should handle filter selection', (WidgetTester tester) async {
       await tester.pumpWidget(createTestWidget(imageData: testImageData));
+      await tester.pump();
 
-      // Expand settings.
       await tester.tap(find.byTooltip('Show All Settings'));
       await tester.pump();
 
-      // Select B&W filter.
       await tester.tap(find.text('B&W'));
       await tester.pump();
       await tester.pump(const Duration(seconds: 1));
 
-      // B&W label is still present after selection.
       expect(find.text('B&W'), findsOneWidget);
     });
 
     testWidgets('should handle format selection', (WidgetTester tester) async {
       await tester.pumpWidget(createTestWidget(imageData: testImageData));
+      await tester.pump();
 
-      // Expand settings.
       await tester.tap(find.byTooltip('Show All Settings'));
       await tester.pump();
 
-      // Select A4 format.
       await tester.tap(find.text('A4'));
       await tester.pump();
 
@@ -223,12 +218,11 @@ void main() {
       WidgetTester tester,
     ) async {
       await tester.pumpWidget(createTestWidget(imageData: testImageData));
+      await tester.pump();
 
-      // Expand settings.
       await tester.tap(find.byTooltip('Show All Settings'));
       await tester.pump();
 
-      // Select High resolution.
       await tester.tap(find.text('High'));
       await tester.pump();
 
@@ -239,25 +233,24 @@ void main() {
       WidgetTester tester,
     ) async {
       await tester.pumpWidget(createTestWidget(imageData: testImageData));
+      await tester.pump();
 
-      // AppBar contributes close/refresh/confirm buttons; controls row adds
-      // rotate left, rotate right, crop, and the settings indicator buttons.
+      // AppBar has close/refresh/confirm; controls row has rotate-left,
+      // rotate-right, crop, and the three compact-indicator buttons.
       expect(find.byType(IconButton), findsAtLeastNWidgets(4));
     });
 
     testWidgets('should handle crop apply button', (WidgetTester tester) async {
       await tester.pumpWidget(createTestWidget(imageData: testImageData));
+      await tester.pump();
 
       // Enable crop mode.
       await tester.tap(find.byIcon(Icons.crop));
       await tester.pump();
 
-      // The controls row shows a green check button with the 'Apply Crop' tooltip.
-      // The AppBar also has a check icon (tooltip: 'Confirm'), so use the tooltip
-      // to be unambiguous.
+      // Controls row now shows an Apply Crop button (green check).
       expect(find.byTooltip('Apply Crop'), findsOneWidget);
 
-      // Test tapping apply crop.
       await tester.tap(find.byTooltip('Apply Crop'));
       await tester.pump();
       await tester.pump(const Duration(seconds: 1));
@@ -267,6 +260,7 @@ void main() {
       WidgetTester tester,
     ) async {
       await tester.pumpWidget(createTestWidget(imageData: testImageData));
+      await tester.pump();
 
       // The controls panel is wrapped in a GestureDetector.
       final controlsArea = find.byType(GestureDetector);
@@ -279,15 +273,13 @@ void main() {
     group('Settings Panel Behavior', () {
       testWidgets('should expand settings on tap', (WidgetTester tester) async {
         await tester.pumpWidget(createTestWidget(imageData: testImageData));
+        await tester.pump();
 
-        // Initially collapsed.
         expect(find.text('Settings'), findsNothing);
 
-        // Tap to expand via the dedicated tooltip.
         await tester.tap(find.byTooltip('Show All Settings'));
         await tester.pump();
 
-        // Should be expanded.
         expect(find.text('Settings'), findsOneWidget);
         expect(find.text('Color Filter:'), findsOneWidget);
         expect(find.text('Document Format:'), findsOneWidget);
@@ -298,17 +290,15 @@ void main() {
         WidgetTester tester,
       ) async {
         await tester.pumpWidget(createTestWidget(imageData: testImageData));
+        await tester.pump();
 
-        // Expand first.
         await tester.tap(find.byTooltip('Show All Settings'));
         await tester.pump();
         expect(find.text('Settings'), findsOneWidget);
 
-        // Collapse via the dedicated tooltip.
         await tester.tap(find.byTooltip('Collapse Settings'));
         await tester.pump();
 
-        // Should be collapsed.
         expect(find.text('Settings'), findsNothing);
       });
     });
@@ -316,6 +306,7 @@ void main() {
     group('Button Tooltips', () {
       testWidgets('should show correct tooltips', (WidgetTester tester) async {
         await tester.pumpWidget(createTestWidget(imageData: testImageData));
+        await tester.pump();
 
         expect(find.byTooltip('Rotate Left'), findsOneWidget);
         expect(find.byTooltip('Rotate Right'), findsOneWidget);
@@ -327,15 +318,13 @@ void main() {
         WidgetTester tester,
       ) async {
         await tester.pumpWidget(createTestWidget(imageData: testImageData));
+        await tester.pump();
 
-        // Initially shows "Enable Crop".
         expect(find.byTooltip('Enable Crop'), findsOneWidget);
 
-        // Enable crop.
         await tester.tap(find.byIcon(Icons.crop));
         await tester.pump();
 
-        // Should now show "Disable Crop" and "Apply Crop".
         expect(find.byTooltip('Disable Crop'), findsOneWidget);
         expect(find.byTooltip('Apply Crop'), findsOneWidget);
       });
@@ -346,10 +335,11 @@ void main() {
         WidgetTester tester,
       ) async {
         await tester.pumpWidget(createTestWidget(imageData: testImageData));
+        await tester.pump();
 
-        // The widget builds its own Scaffold (plus the one from createTestWidget).
+        // ImageEditingWidget builds its own Scaffold.
         expect(find.byType(Scaffold), findsAtLeastNWidgets(1));
-        // The inner Scaffold has an AppBar titled 'Edit Image'.
+        // That Scaffold has an AppBar titled 'Edit Image'.
         expect(find.byType(AppBar), findsOneWidget);
         expect(find.text('Edit Image'), findsOneWidget);
         // The controls panel is wrapped in a GestureDetector.
@@ -360,9 +350,8 @@ void main() {
         WidgetTester tester,
       ) async {
         await tester.pumpWidget(createTestWidget(imageData: testImageData));
+        await tester.pump();
 
-        // The controls panel is always present as a Column child at the bottom.
-        // Verify the rotation row buttons are visible.
         expect(find.byIcon(Icons.rotate_left), findsOneWidget);
         expect(find.byIcon(Icons.rotate_right), findsOneWidget);
         expect(find.byIcon(Icons.crop), findsOneWidget);

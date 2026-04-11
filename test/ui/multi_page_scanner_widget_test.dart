@@ -13,15 +13,13 @@ void main() {
       Widget? customHeader,
     }) {
       return MaterialApp(
-        home: Scaffold(
-          body: MultiPageScannerWidget(
-            documentType: documentType,
-            processingOptions: processingOptions,
-            customFilename: customFilename,
-            onScanComplete: onScanComplete ?? (ScanResult result) {},
-            onError: onError ?? (String error) {},
-            customHeader: customHeader,
-          ),
+        home: MultiPageScannerWidget(
+          documentType: documentType,
+          processingOptions: processingOptions,
+          customFilename: customFilename,
+          onScanComplete: onScanComplete ?? (ScanResult result) {},
+          onError: onError ?? (String error) {},
+          customHeader: customHeader,
         ),
       );
     }
