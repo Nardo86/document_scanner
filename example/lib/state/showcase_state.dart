@@ -79,9 +79,9 @@ class ShowcaseState extends ChangeNotifier {
 
   void addResult(String flow, ScanResult result) {
     _history.insert(
-        0,
-        ScanSessionLog(
-            flow: flow, result: result, timestamp: DateTime.now()));
+      0,
+      ScanSessionLog(flow: flow, result: result, timestamp: DateTime.now()),
+    );
     if (_history.length > _maxHistory) {
       _history.removeRange(_maxHistory, _history.length);
     }
@@ -94,8 +94,11 @@ class ScanSessionLog {
   final ScanResult result;
   final DateTime timestamp;
 
-  ScanSessionLog(
-      {required this.flow, required this.result, required this.timestamp});
+  ScanSessionLog({
+    required this.flow,
+    required this.result,
+    required this.timestamp,
+  });
 }
 
 class ShowcaseStateScope extends InheritedNotifier<ShowcaseState> {
@@ -106,8 +109,8 @@ class ShowcaseStateScope extends InheritedNotifier<ShowcaseState> {
   }) : super(notifier: notifier);
 
   static ShowcaseState watch(BuildContext context) {
-    final scope =
-        context.dependOnInheritedWidgetOfExactType<ShowcaseStateScope>();
+    final scope = context
+        .dependOnInheritedWidgetOfExactType<ShowcaseStateScope>();
     assert(scope != null, 'ShowcaseStateScope not found in context');
     return scope!.notifier!;
   }

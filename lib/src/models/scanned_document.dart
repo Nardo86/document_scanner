@@ -11,16 +11,16 @@ class ScannedDocument {
   final DateTime scanTime;
   final DocumentProcessingOptions processingOptions;
   final Map<String, dynamic> metadata;
-  
+
   // Raw image data for processing
   final Uint8List? rawImageData;
   final Uint8List? processedImageData;
   final Uint8List? pdfData;
-  
+
   // Multi-page support
   final List<DocumentPage> pages;
   final bool isMultiPage;
-  
+
   ScannedDocument({
     required this.id,
     required this.type,
@@ -96,19 +96,16 @@ class ScannedDocument {
       processedPath: json['processedPath'],
       pdfPath: json['pdfPath'],
       scanTime: DateTime.parse(json['scanTime']),
-      processingOptions: DocumentProcessingOptions.fromJson(json['processingOptions']),
+      processingOptions: DocumentProcessingOptions.fromJson(
+        json['processingOptions'],
+      ),
       metadata: json['metadata'] ?? {},
     );
   }
 }
 
 /// Types of documents that can be scanned
-enum DocumentType {
-  receipt,
-  manual,
-  document,
-  other,
-}
+enum DocumentType { receipt, manual, document, other }
 
 /// Processing options for document scanning
 class DocumentProcessingOptions {
@@ -207,35 +204,27 @@ class DocumentProcessingOptions {
 }
 
 /// Supported image formats
-enum ImageFormat {
-  jpeg,
-  png,
-  webp,
-}
+enum ImageFormat { jpeg, png, webp }
 
 /// Color filter options for image editing
-enum ColorFilter {
-  none,
-  highContrast,
-  blackAndWhite,
-}
+enum ColorFilter { none, highContrast, blackAndWhite }
 
 /// Document format options for crop aspect ratio
 enum DocumentFormat {
-  auto,        // Use detected dimensions
-  isoA,        // A4, A3, A5 - all have same ratio (1:√2)
-  usLetter,    // US Letter (8.5" x 11")
-  usLegal,     // US Legal (8.5" x 14")
-  square,      // Square (1:1)
-  receipt,     // Receipt format (narrow and tall)
+  auto, // Use detected dimensions
+  isoA, // A4, A3, A5 - all have same ratio (1:√2)
+  usLetter, // US Letter (8.5" x 11")
+  usLegal, // US Legal (8.5" x 14")
+  square, // Square (1:1)
+  receipt, // Receipt format (narrow and tall)
   businessCard, // Business card format
 }
 
 /// PDF resolution options for document output
 enum PdfResolution {
-  original,    // Use original image resolution (no scaling)
-  quality,     // 300 DPI - standard for print/archive quality
-  size,        // 150 DPI - optimized for smaller file sizes
+  original, // Use original image resolution (no scaling)
+  quality, // 300 DPI - standard for print/archive quality
+  size, // 150 DPI - optimized for smaller file sizes
 }
 
 /// Image editing options
@@ -244,14 +233,14 @@ class ImageEditingOptions {
   final ColorFilter colorFilter;
   final List<Offset>? cropCorners; // 4 corners for cropping
   final DocumentFormat documentFormat; // Format for aspect ratio
-  
+
   const ImageEditingOptions({
     this.rotationDegrees = 0,
     this.colorFilter = ColorFilter.none,
     this.cropCorners,
     this.documentFormat = DocumentFormat.auto,
   });
-  
+
   ImageEditingOptions copyWith({
     int? rotationDegrees,
     ColorFilter? colorFilter,
@@ -340,7 +329,7 @@ class MultiPageScanSession {
   final List<DocumentPage> pages;
   final DateTime startTime;
   final String? customFilename;
-  
+
   MultiPageScanSession({
     required this.sessionId,
     required this.documentType,
@@ -408,8 +397,7 @@ class MultiPageScanSession {
 
   /// Check if session is ready for finalization
   bool get isReadyForFinalization => pages.isNotEmpty;
-  
+
   /// Get total page count
   int get pageCount => pages.length;
 }
-

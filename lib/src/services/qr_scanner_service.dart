@@ -9,20 +9,20 @@ import '../models/scan_result.dart';
 
 /// Service for QR code scanning and manual download
 class QRScannerService {
-  
   /// Scan a QR code.
   ///
   /// This overload does not have access to a [BuildContext] so it cannot show
   /// the scanner UI. Prefer [scanQRCodeWithUI] when a context is available.
   Future<QRScanResult> scanQRCode() async {
     return QRScanResult.error(
-      error: 'QR scanning requires UI context. '
+      error:
+          'QR scanning requires UI context. '
           'Use scanQRCodeWithUI() with BuildContext instead.',
       qrData: '',
       contentType: QRContentType.unknown,
     );
   }
-  
+
   /// Scan QR code with UI integration
   Future<QRScanResult> scanQRCodeWithUI(BuildContext context) async {
     try {
@@ -36,14 +36,14 @@ class QRScannerService {
           ),
         ),
       );
-      
+
       if (result == null) {
         return QRScanResult.error(
           error: 'User cancelled operation',
           qrData: '',
         );
       }
-      
+
       return processQRData(result);
     } catch (e) {
       return QRScanResult.error(
@@ -57,7 +57,7 @@ class QRScannerService {
   QRScanResult processQRData(String qrData) {
     try {
       final contentType = _determineContentType(qrData);
-      
+
       return QRScanResult.success(
         qrData: qrData,
         contentType: contentType,
@@ -96,7 +96,7 @@ class QRScannerService {
 
       // Extract filename from URL or Content-Disposition header
       final filename = _extractFilename(url, response.headers);
-      
+
       // Create scanned document
       final document = ScannedDocument(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -118,26 +118,19 @@ class QRScannerService {
       if (contentType.contains('pdf')) {
         return document.copyWith(
           pdfData: response.bodyBytes,
-          metadata: {
-            ...document.metadata,
-            'isPdf': true,
-          },
+          metadata: {...document.metadata, 'isPdf': true},
         );
       }
 
       // For images, store as raw data for processing
       return document.copyWith(
         rawImageData: response.bodyBytes,
-        metadata: {
-          ...document.metadata,
-          'needsProcessing': true,
-        },
+        metadata: {...document.metadata, 'needsProcessing': true},
       );
     } catch (e) {
       throw Exception('Failed to download manual: $e');
     }
   }
-
 
   /// Determine content type of QR code data
   QRContentType _determineContentType(String qrData) {
@@ -158,10 +151,10 @@ class QRScannerService {
   bool _looksLikeManualUrl(String url) {
     final lowerUrl = url.toLowerCase();
     return lowerUrl.contains('manual') ||
-           lowerUrl.contains('instruction') ||
-           lowerUrl.contains('guide') ||
-           lowerUrl.contains('support') ||
-           lowerUrl.contains('download');
+        lowerUrl.contains('instruction') ||
+        lowerUrl.contains('guide') ||
+        lowerUrl.contains('support') ||
+        lowerUrl.contains('download');
   }
 
   /// Validate URL format
@@ -177,8 +170,8 @@ class QRScannerService {
   /// Check if file type is supported
   bool _isSupportedFileType(String contentType) {
     return contentType.contains('pdf') ||
-           contentType.contains('image/') ||
-           contentType.contains('application/pdf');
+        contentType.contains('image/') ||
+        contentType.contains('application/pdf');
   }
 
   /// Extract filename from URL or headers
@@ -186,7 +179,9 @@ class QRScannerService {
     // Try Content-Disposition header first
     final contentDisposition = headers['content-disposition'];
     if (contentDisposition != null) {
-      final match = RegExp(r'filename[^;=\n]*=([^;\n]*)').firstMatch(contentDisposition);
+      final match = RegExp(
+        r'filename[^;=\n]*=([^;\n]*)',
+      ).firstMatch(contentDisposition);
       if (match != null) {
         return match.group(1)?.replaceAll('"', '') ?? '';
       }
@@ -202,13 +197,12 @@ class QRScannerService {
     }
   }
 
-
   /// Validate manual URL before downloading
   Future<bool> validateManualUrl(String url) async {
     try {
       final response = await http.head(Uri.parse(url));
-      return response.statusCode == 200 && 
-             _isSupportedFileType(response.headers['content-type'] ?? '');
+      return response.statusCode == 200 &&
+          _isSupportedFileType(response.headers['content-type'] ?? '');
     } catch (e) {
       return false;
     }
@@ -218,7 +212,7 @@ class QRScannerService {
   Future<Map<String, dynamic>> getManualMetadata(String url) async {
     try {
       final response = await http.head(Uri.parse(url));
-      
+
       return {
         'url': url,
         'statusCode': response.statusCode,
@@ -229,11 +223,7 @@ class QRScannerService {
         'isValid': response.statusCode == 200,
       };
     } catch (e) {
-      return {
-        'url': url,
-        'error': e.toString(),
-        'isValid': false,
-      };
+      return {'url': url, 'error': e.toString(), 'isValid': false};
     }
   }
 
@@ -244,11 +234,8 @@ class QRScannerService {
 /// QR Scanner Screen Widget
 class QRScannerScreen extends StatefulWidget {
   final Function(String) onResult;
-  
-  const QRScannerScreen({
-    Key? key,
-    required this.onResult,
-  }) : super(key: key);
+
+  const QRScannerScreen({Key? key, required this.onResult}) : super(key: key);
 
   @override
   State<QRScannerScreen> createState() => _QRScannerScreenState();
@@ -303,7 +290,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
                 controller: controller,
                 onDetect: (capture) {
                   if (_hasResult) return;
-                  
+
                   final List<Barcode> barcodes = capture.barcodes;
                   for (final barcode in barcodes) {
                     if (barcode.rawValue != null) {
@@ -332,18 +319,12 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
                   const SizedBox(height: 8),
                   const Text(
                     'Point camera at QR code',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     'The QR code will be scanned automatically',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[600],
-                    ),
+                    style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                   ),
                 ],
               ),
@@ -354,4 +335,3 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
     );
   }
 }
-

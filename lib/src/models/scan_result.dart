@@ -45,9 +45,7 @@ class ScanResult {
   }
 
   /// User cancelled operation
-  factory ScanResult.cancelled({
-    ScanResultType type = ScanResultType.scan,
-  }) {
+  factory ScanResult.cancelled({ScanResultType type = ScanResultType.scan}) {
     return ScanResult(
       success: false,
       error: 'User cancelled operation',
@@ -70,7 +68,7 @@ class ScanResult {
   factory ScanResult.fromJson(Map<String, dynamic> json) {
     return ScanResult(
       success: json['success'],
-      document: json['document'] != null 
+      document: json['document'] != null
           ? ScannedDocument.fromJson(json['document'])
           : null,
       error: json['error'],
@@ -85,10 +83,10 @@ class ScanResult {
 
 /// Types of scan results
 enum ScanResultType {
-  scan,           // Direct camera scan
-  import,         // Imported from gallery
-  download,       // Downloaded from URL/QR
-  qrScan,         // QR code scan result
+  scan, // Direct camera scan
+  import, // Imported from gallery
+  download, // Downloaded from URL/QR
+  qrScan, // QR code scan result
 }
 
 /// QR Code scan result specifically for manuals
@@ -104,12 +102,12 @@ class QRScanResult extends ScanResult {
     String? error,
     Map<String, dynamic> metadata = const {},
   }) : super(
-          success: success,
-          document: document,
-          error: error,
-          type: ScanResultType.qrScan,
-          metadata: metadata,
-        );
+         success: success,
+         document: document,
+         error: error,
+         type: ScanResultType.qrScan,
+         metadata: metadata,
+       );
 
   /// Success QR scan
   factory QRScanResult.success({
@@ -157,7 +155,7 @@ class QRScanResult extends ScanResult {
         (e) => e.toString() == json['contentType'],
         orElse: () => QRContentType.unknown,
       ),
-      document: json['document'] != null 
+      document: json['document'] != null
           ? ScannedDocument.fromJson(json['document'])
           : null,
       error: json['error'],
@@ -167,11 +165,4 @@ class QRScanResult extends ScanResult {
 }
 
 /// Types of QR code content
-enum QRContentType {
-  url,
-  pdfLink,
-  manualLink,
-  text,
-  unknown,
-}
-
+enum QRContentType { url, pdfLink, manualLink, text, unknown }

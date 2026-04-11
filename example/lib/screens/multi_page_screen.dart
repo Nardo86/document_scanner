@@ -18,8 +18,9 @@ class MultiPageScreen extends StatefulWidget {
 
 class _MultiPageScreenState extends State<MultiPageScreen> {
   DocumentType _selectedType = DocumentType.manual;
-  final TextEditingController _filenameController =
-      TextEditingController(text: 'multi-session');
+  final TextEditingController _filenameController = TextEditingController(
+    text: 'multi-session',
+  );
   bool _isLaunching = false;
   ScanResult? _lastResult;
 
@@ -58,10 +59,10 @@ class _MultiPageScreenState extends State<MultiPageScreen> {
               ? const SizedBox(
                   width: 16,
                   height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2))
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
               : const Icon(Icons.play_arrow),
-          label: Text(
-              _isLaunching ? 'Launching…' : 'Start multi-page session'),
+          label: Text(_isLaunching ? 'Launching…' : 'Start multi-page session'),
         ),
         const SizedBox(height: 24),
         if (_lastResult != null) ...[
@@ -97,19 +98,20 @@ class _MultiPageScreenState extends State<MultiPageScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Document type',
-            style: Theme.of(context).textTheme.titleMedium),
+        Text('Document type', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
           children: options
-              .map((option) => ChoiceChip(
-                    label: Text(option.name),
-                    selected: _selectedType == option,
-                    onSelected: (selected) {
-                      if (selected) setState(() => _selectedType = option);
-                    },
-                  ))
+              .map(
+                (option) => ChoiceChip(
+                  label: Text(option.name),
+                  selected: _selectedType == option,
+                  onSelected: (selected) {
+                    if (selected) setState(() => _selectedType = option);
+                  },
+                ),
+              )
               .toList(),
         ),
       ],
@@ -125,8 +127,10 @@ class _MultiPageScreenState extends State<MultiPageScreen> {
           children: [
             Row(
               children: [
-                Icon(Icons.collections,
-                    color: Theme.of(context).colorScheme.primary),
+                Icon(
+                  Icons.collections,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
                 const SizedBox(width: 12),
                 Text(
                   'Pages (${document.pages.length})',
@@ -144,8 +148,7 @@ class _MultiPageScreenState extends State<MultiPageScreen> {
             GridView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              gridDelegate:
-                  const SliverGridDelegateWithFixedCrossAxisCount(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 2,
                 crossAxisSpacing: 12,
                 mainAxisSpacing: 12,
@@ -194,7 +197,8 @@ class _MultiPageScreenState extends State<MultiPageScreen> {
   Future<void> _launchMultiPageScanner() async {
     setState(() => _isLaunching = true);
     final state = ShowcaseStateScope.read(context);
-    final filename = state.resolveFilename(_filenameController.text) ??
+    final filename =
+        state.resolveFilename(_filenameController.text) ??
         _filenameController.text.trim();
 
     final result = await Navigator.push<ScanResult>(
@@ -207,8 +211,9 @@ class _MultiPageScreenState extends State<MultiPageScreen> {
           onScanComplete: (scanResult) =>
               Navigator.pop(routeContext, scanResult),
           onError: (error) {
-            ScaffoldMessenger.of(routeContext)
-                .showSnackBar(SnackBar(content: Text(error)));
+            ScaffoldMessenger.of(
+              routeContext,
+            ).showSnackBar(SnackBar(content: Text(error)));
           },
         ),
       ),
@@ -227,7 +232,8 @@ class _MultiPageScreenState extends State<MultiPageScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-                'Captured ${result.document?.pages.length ?? 0} pages'),
+              'Captured ${result.document?.pages.length ?? 0} pages',
+            ),
             action: SnackBarAction(
               label: 'View',
               onPressed: () {
@@ -276,12 +282,13 @@ class _MultiPageScreenState extends State<MultiPageScreen> {
               const SizedBox(height: 8),
               Text('Pages: ${document.pages.length}'),
               const SizedBox(height: 8),
-              Text(
-                  'Multi-page: ${document.isMultiPage ? 'Yes' : 'No'}'),
+              Text('Multi-page: ${document.isMultiPage ? 'Yes' : 'No'}'),
               const SizedBox(height: 16),
               if (document.metadata.isNotEmpty) ...[
-                const Text('Custom Metadata:',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text(
+                  'Custom Metadata:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
                 const SizedBox(height: 8),
                 ...document.metadata.entries.map(
                   (entry) => Padding(
@@ -330,27 +337,21 @@ class _PageThumbnailCard extends StatelessWidget {
           children: [
             Expanded(
               child: page.processedImageData != null
-                  ? Image.memory(
-                      page.processedImageData!,
-                      fit: BoxFit.cover,
-                    )
+                  ? Image.memory(page.processedImageData!, fit: BoxFit.cover)
                   : Container(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .surfaceContainerHighest,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest,
                       child: Icon(
                         Icons.image_not_supported,
                         size: 48,
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurfaceVariant,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
             ),
             Container(
               padding: const EdgeInsets.all(8),
-              color:
-                  Theme.of(context).colorScheme.surfaceContainerHighest,
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -405,8 +406,10 @@ class _PageDetailsSheet extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.insert_drive_file,
-                  color: Theme.of(context).colorScheme.primary),
+              Icon(
+                Icons.insert_drive_file,
+                color: Theme.of(context).colorScheme.primary,
+              ),
               const SizedBox(width: 12),
               Text(
                 'Page ${index + 1} Details',
@@ -435,9 +438,7 @@ class _PageDetailsSheet extends StatelessWidget {
             Container(
               height: 300,
               decoration: BoxDecoration(
-                color: Theme.of(context)
-                    .colorScheme
-                    .surfaceContainerHighest,
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Center(
@@ -447,21 +448,14 @@ class _PageDetailsSheet extends StatelessWidget {
                     Icon(
                       Icons.image_not_supported,
                       size: 64,
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurfaceVariant,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                     const SizedBox(height: 8),
                     Text(
                       'No preview available',
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodyMedium
-                          ?.copyWith(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurfaceVariant,
-                          ),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ],
                 ),
@@ -474,16 +468,19 @@ class _PageDetailsSheet extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Scan Information',
-                      style: Theme.of(context).textTheme.titleMedium),
+                  Text(
+                    'Scan Information',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                   const SizedBox(height: 12),
-                  _buildInfoRow(context, 'Scan time',
-                      page.scanTime.toLocal().toString()),
+                  _buildInfoRow(
+                    context,
+                    'Scan time',
+                    page.scanTime.toLocal().toString(),
+                  ),
                   _buildInfoRow(context, 'Page ID', page.id),
-                  _buildInfoRow(
-                      context, 'Original path', page.originalPath),
-                  _buildInfoRow(
-                      context, 'Processed path', page.processedPath),
+                  _buildInfoRow(context, 'Original path', page.originalPath),
+                  _buildInfoRow(context, 'Processed path', page.processedPath),
                 ],
               ),
             ),
@@ -496,12 +493,14 @@ class _PageDetailsSheet extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Metadata',
-                        style: Theme.of(context).textTheme.titleMedium),
+                    Text(
+                      'Metadata',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
                     const SizedBox(height: 12),
                     ...page.metadata.entries.map(
-                      (entry) => _buildInfoRow(
-                          context, entry.key, '${entry.value}'),
+                      (entry) =>
+                          _buildInfoRow(context, entry.key, '${entry.value}'),
                     ),
                   ],
                 ),
@@ -512,8 +511,7 @@ class _PageDetailsSheet extends StatelessWidget {
     );
   }
 
-  Widget _buildInfoRow(
-      BuildContext context, String label, String? value) {
+  Widget _buildInfoRow(BuildContext context, String label, String? value) {
     if (value == null || value.isEmpty) {
       return const SizedBox.shrink();
     }
@@ -527,10 +525,8 @@ class _PageDetailsSheet extends StatelessWidget {
             child: Text(
               label,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurfaceVariant,
-                  ),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
           Expanded(
@@ -562,8 +558,10 @@ class _MultiPageBanner extends StatelessWidget {
       color: theme.colorScheme.primaryContainer,
       child: Row(
         children: [
-          Icon(Icons.tips_and_updates,
-              color: theme.colorScheme.onPrimaryContainer),
+          Icon(
+            Icons.tips_and_updates,
+            color: theme.colorScheme.onPrimaryContainer,
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
@@ -571,7 +569,8 @@ class _MultiPageBanner extends StatelessWidget {
                   ? 'Add pages, reorder, then finalize to PDF.'
                   : 'Saving as "$filename" — add pages, reorder, then finalize.',
               style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onPrimaryContainer),
+                color: theme.colorScheme.onPrimaryContainer,
+              ),
             ),
           ),
         ],

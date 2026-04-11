@@ -50,14 +50,19 @@ void main() {
       test('resizes large image to max 2000px long edge', () {
         // Create a large test image (4000x3000)
         final largeImageData = _createTestImage(4000, 3000);
-        
+
         // Test that camera service has resize capability (indirect testing)
-        expect(cameraService, isA<CameraService>()); // Service should be instantiable
-        
+        expect(
+          cameraService,
+          isA<CameraService>(),
+        ); // Service should be instantiable
+
         // Since we can't directly test private method, we'll test the resize logic
         // by checking if the image would need resizing
         final image = img.decodeImage(largeImageData)!;
-        final maxDimension = image.width > image.height ? image.width : image.height;
+        final maxDimension = image.width > image.height
+            ? image.width
+            : image.height;
         expect(maxDimension, equals(4000));
         expect(maxDimension, greaterThan(2000)); // Should need resizing
       });
@@ -65,27 +70,34 @@ void main() {
       test('keeps small image unchanged', () {
         // Create a small test image (800x600)
         final smallImageData = _createTestImage(800, 600);
-        
+
         final image = img.decodeImage(smallImageData)!;
-        final maxDimension = image.width > image.height ? image.width : image.height;
+        final maxDimension = image.width > image.height
+            ? image.width
+            : image.height;
         expect(maxDimension, equals(800));
-        expect(maxDimension, lessThanOrEqualTo(2000)); // Should not need resizing
+        expect(
+          maxDimension,
+          lessThanOrEqualTo(2000),
+        ); // Should not need resizing
       });
 
       test('resizes landscape image correctly', () {
         // Create a landscape image (3000x2000)
         final landscapeImageData = _createTestImage(3000, 2000);
-        
+
         final image = img.decodeImage(landscapeImageData)!;
-        final maxDimension = image.width > image.height ? image.width : image.height;
+        final maxDimension = image.width > image.height
+            ? image.width
+            : image.height;
         expect(maxDimension, equals(3000));
         expect(maxDimension, greaterThan(2000)); // Should need resizing
-        
+
         // Expected resize ratio should be 2000/3000 = 0.667
         final expectedRatio = 2000.0 / 3000.0;
         final expectedWidth = (3000 * expectedRatio).round();
         final expectedHeight = (2000 * expectedRatio).round();
-        
+
         expect(expectedWidth, equals(2000));
         expect(expectedHeight, equals(1333));
       });
@@ -93,17 +105,19 @@ void main() {
       test('resizes portrait image correctly', () {
         // Create a portrait image (2000x3000)
         final portraitImageData = _createTestImage(2000, 3000);
-        
+
         final image = img.decodeImage(portraitImageData)!;
-        final maxDimension = image.width > image.height ? image.width : image.height;
+        final maxDimension = image.width > image.height
+            ? image.width
+            : image.height;
         expect(maxDimension, equals(3000));
         expect(maxDimension, greaterThan(2000)); // Should need resizing
-        
+
         // Expected resize ratio should be 2000/3000 = 0.667
         final expectedRatio = 2000.0 / 3000.0;
         final expectedWidth = (2000 * expectedRatio).round();
         final expectedHeight = (3000 * expectedRatio).round();
-        
+
         expect(expectedWidth, equals(1333));
         expect(expectedHeight, equals(2000));
       });
@@ -111,16 +125,18 @@ void main() {
       test('handles square image correctly', () {
         // Create a square image (2500x2500)
         final squareImageData = _createTestImage(2500, 2500);
-        
+
         final image = img.decodeImage(squareImageData)!;
-        final maxDimension = image.width > image.height ? image.width : image.height;
+        final maxDimension = image.width > image.height
+            ? image.width
+            : image.height;
         expect(maxDimension, equals(2500));
         expect(maxDimension, greaterThan(2000)); // Should need resizing
-        
+
         // Expected resize ratio should be 2000/2500 = 0.8
         final expectedRatio = 2000.0 / 2500.0;
         final expectedSize = (2500 * expectedRatio).round();
-        
+
         expect(expectedSize, equals(2000));
       });
     });
@@ -167,10 +183,10 @@ void main() {
 Uint8List _createTestImage(int width, int height) {
   // Create a simple red square image using the image package
   final image = img.Image(width: width, height: height);
-  
+
   // Fill with red color
   img.fill(image, color: img.ColorRgb8(255, 0, 0));
-  
+
   // Encode as JPEG
   return Uint8List.fromList(img.encodeJpg(image, quality: 90));
 }

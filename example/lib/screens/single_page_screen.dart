@@ -48,8 +48,7 @@ class _SinglePageScreenState extends State<SinglePageScreen> {
     final state = ShowcaseStateScope.read(context);
     if (_lastFilenameVersion != state.filenameVersion) {
       final current = _filenameController.text.trim();
-      final isUserEdit =
-          current.isNotEmpty && current != _lastAppliedDefault;
+      final isUserEdit = current.isNotEmpty && current != _lastAppliedDefault;
       if (!isUserEdit) {
         _filenameController.text = state.defaultFilename ?? '';
       }
@@ -68,8 +67,7 @@ class _SinglePageScreenState extends State<SinglePageScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ShowcaseStateScope.watch(context);
-    final resolvedFilename =
-        state.resolveFilename(_filenameController.text);
+    final resolvedFilename = state.resolveFilename(_filenameController.text);
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -104,11 +102,14 @@ class _SinglePageScreenState extends State<SinglePageScreen> {
               ? const SizedBox(
                   width: 16,
                   height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2))
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
               : const Icon(Icons.play_arrow),
-          label: Text(_activeAction == _Action.guided
-              ? 'Launching...'
-              : 'Launch guided scanner'),
+          label: Text(
+            _activeAction == _Action.guided
+                ? 'Launching...'
+                : 'Launch guided scanner',
+          ),
         ),
         const SizedBox(height: 16),
         _buildQuickActions(),
@@ -143,19 +144,20 @@ class _SinglePageScreenState extends State<SinglePageScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Document type',
-            style: Theme.of(context).textTheme.titleMedium),
+        Text('Document type', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
           children: options
-              .map((option) => ChoiceChip(
-                    label: Text(option.name),
-                    selected: _selectedType == option,
-                    onSelected: (selected) {
-                      if (selected) setState(() => _selectedType = option);
-                    },
-                  ))
+              .map(
+                (option) => ChoiceChip(
+                  label: Text(option.name),
+                  selected: _selectedType == option,
+                  onSelected: (selected) {
+                    if (selected) setState(() => _selectedType = option);
+                  },
+                ),
+              )
               .toList(),
         ),
       ],
@@ -166,25 +168,25 @@ class _SinglePageScreenState extends State<SinglePageScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Quick actions',
-            style: Theme.of(context).textTheme.titleMedium),
+        Text('Quick actions', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
         Row(
           children: [
             Expanded(
               child: OutlinedButton.icon(
-                onPressed:
-                    _isBusy ? null : () => _runQuickAction(useCamera: true),
+                onPressed: _isBusy
+                    ? null
+                    : () => _runQuickAction(useCamera: true),
                 icon: _activeAction == _Action.camera
                     ? const SizedBox(
                         width: 16,
                         height: 16,
-                        child:
-                            CircularProgressIndicator(strokeWidth: 2))
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
                     : const Icon(Icons.camera_alt),
-                label: Text(_activeAction == _Action.camera
-                    ? 'Capturing...'
-                    : 'Camera'),
+                label: Text(
+                  _activeAction == _Action.camera ? 'Capturing...' : 'Camera',
+                ),
               ),
             ),
             const SizedBox(width: 12),
@@ -197,12 +199,12 @@ class _SinglePageScreenState extends State<SinglePageScreen> {
                     ? const SizedBox(
                         width: 16,
                         height: 16,
-                        child:
-                            CircularProgressIndicator(strokeWidth: 2))
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
                     : const Icon(Icons.photo_library),
-                label: Text(_activeAction == _Action.gallery
-                    ? 'Importing...'
-                    : 'Gallery'),
+                label: Text(
+                  _activeAction == _Action.gallery ? 'Importing...' : 'Gallery',
+                ),
               ),
             ),
           ],
@@ -229,8 +231,9 @@ class _SinglePageScreenState extends State<SinglePageScreen> {
           customHeader: _GuidedScannerBanner(filename: filename),
           onScanComplete: (r) => Navigator.pop(routeContext, r),
           onError: (error) {
-            ScaffoldMessenger.of(routeContext)
-                .showSnackBar(SnackBar(content: Text(error)));
+            ScaffoldMessenger.of(
+              routeContext,
+            ).showSnackBar(SnackBar(content: Text(error)));
           },
         ),
       ),
@@ -249,8 +252,9 @@ class _SinglePageScreenState extends State<SinglePageScreen> {
   }
 
   Future<void> _runQuickAction({required bool useCamera}) async {
-    setState(() =>
-        _activeAction = useCamera ? _Action.camera : _Action.gallery);
+    setState(
+      () => _activeAction = useCamera ? _Action.camera : _Action.gallery,
+    );
 
     final state = ShowcaseStateScope.read(context);
     final filename = state.resolveFilename(_filenameController.text);
@@ -258,9 +262,13 @@ class _SinglePageScreenState extends State<SinglePageScreen> {
     try {
       final result = useCamera
           ? await _scannerService.scanDocument(
-              documentType: _selectedType, customFilename: filename)
+              documentType: _selectedType,
+              customFilename: filename,
+            )
           : await _scannerService.importDocument(
-              documentType: _selectedType, customFilename: filename);
+              documentType: _selectedType,
+              customFilename: filename,
+            );
 
       if (!mounted) return;
 
@@ -274,21 +282,27 @@ class _SinglePageScreenState extends State<SinglePageScreen> {
           processingOptions: result.document!.processingOptions,
         );
         if (mounted) {
-          _handleResult(finalResult,
-              flowLabel:
-                  useCamera ? 'Single Page (Camera)' : 'Single Page (Gallery)');
+          _handleResult(
+            finalResult,
+            flowLabel: useCamera
+                ? 'Single Page (Camera)'
+                : 'Single Page (Gallery)',
+          );
         }
       } else {
-        _handleResult(result,
-            flowLabel:
-                useCamera ? 'Single Page (Camera)' : 'Single Page (Gallery)');
+        _handleResult(
+          result,
+          flowLabel: useCamera
+              ? 'Single Page (Camera)'
+              : 'Single Page (Gallery)',
+        );
       }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content:
-                Text('Failed to ${useCamera ? 'capture' : 'import'}: $e')),
+          content: Text('Failed to ${useCamera ? 'capture' : 'import'}: $e'),
+        ),
       );
     } finally {
       if (mounted) setState(() => _activeAction = _Action.none);
@@ -297,8 +311,10 @@ class _SinglePageScreenState extends State<SinglePageScreen> {
 
   void _handleResult(ScanResult result, {required String flowLabel}) {
     if (kDebugMode) {
-      debugPrint('DocumentScanner: $flowLabel - '
-          '${result.success ? "SUCCESS" : "FAILED"}');
+      debugPrint(
+        'DocumentScanner: $flowLabel - '
+        '${result.success ? "SUCCESS" : "FAILED"}',
+      );
     }
 
     final messenger = ScaffoldMessenger.of(context);
@@ -307,10 +323,12 @@ class _SinglePageScreenState extends State<SinglePageScreen> {
 
     if (result.success) {
       messenger.showSnackBar(
-          SnackBar(content: Text('Saved ${_displayName(result)}')));
+        SnackBar(content: Text('Saved ${_displayName(result)}')),
+      );
     } else {
       messenger.showSnackBar(
-          SnackBar(content: Text(result.error ?? 'Scan failed')));
+        SnackBar(content: Text(result.error ?? 'Scan failed')),
+      );
     }
   }
 
@@ -331,8 +349,10 @@ class _NamingStrategyBanner extends StatelessWidget {
   final String? resolvedFilename;
   final String storageDirectory;
 
-  const _NamingStrategyBanner(
-      {required this.resolvedFilename, required this.storageDirectory});
+  const _NamingStrategyBanner({
+    required this.resolvedFilename,
+    required this.storageDirectory,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -351,20 +371,28 @@ class _NamingStrategyBanner extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(Icons.badge_outlined,
-              color: theme.colorScheme.onSecondaryContainer),
+          Icon(
+            Icons.badge_outlined,
+            color: theme.colorScheme.onSecondaryContainer,
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                        color: theme.colorScheme.onSecondaryContainer)),
+                Text(
+                  title,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: theme.colorScheme.onSecondaryContainer,
+                  ),
+                ),
                 const SizedBox(height: 2),
-                Text('$subtitle Storage: $storageDirectory',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSecondaryContainer)),
+                Text(
+                  '$subtitle Storage: $storageDirectory',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSecondaryContainer,
+                  ),
+                ),
               ],
             ),
           ),
@@ -388,15 +416,18 @@ class _FirstScanBanner extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(Icons.lightbulb_outline,
-              color: theme.colorScheme.onPrimaryContainer),
+          Icon(
+            Icons.lightbulb_outline,
+            color: theme.colorScheme.onPrimaryContainer,
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
               'Tap a button below to capture or import your first document. '
               'For multi-page documents, switch to the Multi Scan tab.',
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: theme.colorScheme.onPrimaryContainer),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onPrimaryContainer,
+              ),
             ),
           ),
         ],
@@ -417,8 +448,10 @@ class _GuidedScannerBanner extends StatelessWidget {
       color: Theme.of(context).colorScheme.secondaryContainer,
       child: Row(
         children: [
-          Icon(Icons.tips_and_updates,
-              color: Theme.of(context).colorScheme.onSecondaryContainer),
+          Icon(
+            Icons.tips_and_updates,
+            color: Theme.of(context).colorScheme.onSecondaryContainer,
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
@@ -426,8 +459,8 @@ class _GuidedScannerBanner extends StatelessWidget {
                   ? 'Files will use automatic naming'
                   : 'Saving as "$filename"',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color:
-                      Theme.of(context).colorScheme.onSecondaryContainer),
+                color: Theme.of(context).colorScheme.onSecondaryContainer,
+              ),
             ),
           ),
         ],

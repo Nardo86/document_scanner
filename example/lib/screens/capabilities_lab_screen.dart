@@ -64,16 +64,15 @@ class _CapabilitiesLabScreenState extends State<CapabilitiesLabScreen> {
                     child: Text(
                       _error!,
                       style: TextStyle(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onErrorContainer),
+                        color: Theme.of(context).colorScheme.onErrorContainer,
+                      ),
                     ),
                   ),
                   IconButton(
-                    icon: Icon(Icons.close,
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onErrorContainer),
+                    icon: Icon(
+                      Icons.close,
+                      color: Theme.of(context).colorScheme.onErrorContainer,
+                    ),
                     onPressed: () => setState(() => _error = null),
                     tooltip: 'Dismiss',
                   ),
@@ -132,21 +131,25 @@ class _CapabilitiesLabScreenState extends State<CapabilitiesLabScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Document type',
-                style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              'Document type',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               children: options
-                  .map((option) => ChoiceChip(
-                        label: Text(option.name),
-                        selected: _documentType == option,
-                        onSelected: (selected) {
-                          if (selected) {
-                            setState(() => _documentType = option);
-                          }
-                        },
-                      ))
+                  .map(
+                    (option) => ChoiceChip(
+                      label: Text(option.name),
+                      selected: _documentType == option,
+                      onSelected: (selected) {
+                        if (selected) {
+                          setState(() => _documentType = option);
+                        }
+                      },
+                    ),
+                  )
                   .toList(),
             ),
           ],
@@ -191,15 +194,13 @@ class _CapabilitiesLabScreenState extends State<CapabilitiesLabScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                    'Compression quality (${(_compression * 100).round()}%)'),
+                Text('Compression quality (${(_compression * 100).round()}%)'),
                 Slider(
                   value: _compression,
                   min: 0.4,
                   max: 1.0,
                   divisions: 6,
-                  onChanged: (value) =>
-                      setState(() => _compression = value),
+                  onChanged: (value) => setState(() => _compression = value),
                 ),
               ],
             ),
@@ -224,8 +225,10 @@ class _CapabilitiesLabScreenState extends State<CapabilitiesLabScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('PDF resolution & format',
-                style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              'PDF resolution & format',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             const SizedBox(height: 12),
             Row(
               children: [
@@ -235,11 +238,7 @@ class _CapabilitiesLabScreenState extends State<CapabilitiesLabScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _buildSummaryChips(),
-            ),
+            Wrap(spacing: 8, runSpacing: 8, children: _buildSummaryChips()),
           ],
         ),
       ),
@@ -250,9 +249,7 @@ class _CapabilitiesLabScreenState extends State<CapabilitiesLabScreen> {
     return [
       Chip(label: Text(_grayscale ? 'Grayscale' : 'Color')),
       Chip(label: Text(_contrast ? 'Contrast +' : 'Contrast off')),
-      Chip(
-          label:
-              Text('Compression ${(_compression * 100).round()}%')),
+      Chip(label: Text('Compression ${(_compression * 100).round()}%')),
       Chip(label: Text('Resolution ${_resolution.name}')),
       Chip(label: Text(_saveImage ? 'PDF + image' : 'PDF only')),
       Chip(label: Text('Format ${_format.name}')),
@@ -270,10 +267,7 @@ class _CapabilitiesLabScreenState extends State<CapabilitiesLabScreen> {
           value: _resolution,
           isExpanded: true,
           items: PdfResolution.values
-              .map((res) => DropdownMenuItem(
-                    value: res,
-                    child: Text(res.name),
-                  ))
+              .map((res) => DropdownMenuItem(value: res, child: Text(res.name)))
               .toList(),
           onChanged: (value) {
             if (value != null) setState(() => _resolution = value);
@@ -294,10 +288,10 @@ class _CapabilitiesLabScreenState extends State<CapabilitiesLabScreen> {
           value: _format,
           isExpanded: true,
           items: formats
-              .map((format) => DropdownMenuItem(
-                    value: format,
-                    child: Text(format.name),
-                  ))
+              .map(
+                (format) =>
+                    DropdownMenuItem(value: format, child: Text(format.name)),
+              )
               .toList(),
           onChanged: (value) {
             if (value != null) setState(() => _format = value);
@@ -312,33 +306,33 @@ class _CapabilitiesLabScreenState extends State<CapabilitiesLabScreen> {
       children: [
         Expanded(
           child: FilledButton.icon(
-            onPressed:
-                _isBusy ? null : () => _runExperiment(useCamera: true),
+            onPressed: _isBusy ? null : () => _runExperiment(useCamera: true),
             icon: _activeAction == _LabAction.camera
                 ? const SizedBox(
                     width: 16,
                     height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2))
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
                 : const Icon(Icons.camera),
-            label: Text(_activeAction == _LabAction.camera
-                ? 'Capturing…'
-                : 'Camera'),
+            label: Text(
+              _activeAction == _LabAction.camera ? 'Capturing…' : 'Camera',
+            ),
           ),
         ),
         const SizedBox(width: 12),
         Expanded(
           child: OutlinedButton.icon(
-            onPressed:
-                _isBusy ? null : () => _runExperiment(useCamera: false),
+            onPressed: _isBusy ? null : () => _runExperiment(useCamera: false),
             icon: _activeAction == _LabAction.gallery
                 ? const SizedBox(
                     width: 16,
                     height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2))
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
                 : const Icon(Icons.photo_library),
-            label: Text(_activeAction == _LabAction.gallery
-                ? 'Importing…'
-                : 'Gallery'),
+            label: Text(
+              _activeAction == _LabAction.gallery ? 'Importing…' : 'Gallery',
+            ),
           ),
         ),
         const SizedBox(width: 12),
@@ -374,8 +368,7 @@ class _CapabilitiesLabScreenState extends State<CapabilitiesLabScreen> {
 
   Future<void> _runExperiment({required bool useCamera}) async {
     setState(() {
-      _activeAction =
-          useCamera ? _LabAction.camera : _LabAction.gallery;
+      _activeAction = useCamera ? _LabAction.camera : _LabAction.gallery;
       _error = null;
     });
 
@@ -396,15 +389,13 @@ class _CapabilitiesLabScreenState extends State<CapabilitiesLabScreen> {
     try {
       ScanResult result;
       if (useCamera) {
-        result =
-            await DocumentScannerService().scanDocumentWithProcessing(
+        result = await DocumentScannerService().scanDocumentWithProcessing(
           documentType: _documentType,
           processingOptions: options,
           customFilename: filename,
         );
       } else {
-        result = await DocumentScannerService()
-            .importDocumentWithProcessing(
+        result = await DocumentScannerService().importDocumentWithProcessing(
           documentType: _documentType,
           processingOptions: options,
           customFilename: filename,
@@ -419,8 +410,8 @@ class _CapabilitiesLabScreenState extends State<CapabilitiesLabScreen> {
       if (!result.success) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text(
-                  result.error ?? 'Experiment returned an error.')),
+            content: Text(result.error ?? 'Experiment returned an error.'),
+          ),
         );
       }
     } catch (e) {

@@ -26,14 +26,20 @@ void main() {
       );
     }
 
-    testWidgets('should display multi-page scanner with correct title', (WidgetTester tester) async {
-      await tester.pumpWidget(createTestWidget(documentType: DocumentType.manual));
+    testWidgets('should display multi-page scanner with correct title', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        createTestWidget(documentType: DocumentType.manual),
+      );
 
       expect(find.text('Multi-Page Manual'), findsOneWidget);
       expect(find.byIcon(Icons.menu_book), findsOneWidget);
     });
 
-    testWidgets('should show initial scan view when no pages exist', (WidgetTester tester) async {
+    testWidgets('should show initial scan view when no pages exist', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(createTestWidget());
 
       expect(find.text('No pages scanned yet'), findsOneWidget);
@@ -42,21 +48,27 @@ void main() {
       expect(find.text('Import Page'), findsOneWidget);
     });
 
-    testWidgets('should display custom header when provided', (WidgetTester tester) async {
+    testWidgets('should display custom header when provided', (
+      WidgetTester tester,
+    ) async {
       const customHeader = Text('Custom Multi-Page Header');
       await tester.pumpWidget(createTestWidget(customHeader: customHeader));
 
       expect(find.text('Custom Multi-Page Header'), findsOneWidget);
     });
 
-    testWidgets('should have proper app bar structure', (WidgetTester tester) async {
+    testWidgets('should have proper app bar structure', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(createTestWidget());
 
       expect(find.byType(AppBar), findsOneWidget);
       expect(find.text('Multi-Page Document'), findsOneWidget);
     });
 
-    testWidgets('should show page count indicator when pages exist', (WidgetTester tester) async {
+    testWidgets('should show page count indicator when pages exist', (
+      WidgetTester tester,
+    ) async {
       // This test would require mocking a session with pages
       // For now, we'll test the structure
       await tester.pumpWidget(createTestWidget());
@@ -65,7 +77,9 @@ void main() {
       expect(find.text('pages scanned'), findsNothing);
     });
 
-    testWidgets('should have scan buttons in initial view', (WidgetTester tester) async {
+    testWidgets('should have scan buttons in initial view', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(createTestWidget());
 
       expect(find.text('Scan First Page'), findsOneWidget);
@@ -74,7 +88,9 @@ void main() {
       expect(find.byIcon(Icons.photo_library), findsOneWidget);
     });
 
-    testWidgets('should handle scan first page button tap', (WidgetTester tester) async {
+    testWidgets('should handle scan first page button tap', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(createTestWidget());
 
       expect(find.text('Scan First Page'), findsOneWidget);
@@ -85,7 +101,9 @@ void main() {
       expect(find.byType(CircularProgressIndicator), findsWidgets);
     });
 
-    testWidgets('should handle import page button tap', (WidgetTester tester) async {
+    testWidgets('should handle import page button tap', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(createTestWidget());
 
       expect(find.text('Import Page'), findsOneWidget);
@@ -96,22 +114,32 @@ void main() {
       expect(find.byType(CircularProgressIndicator), findsWidgets);
     });
 
-    testWidgets('should show correct document type for receipts', (WidgetTester tester) async {
-      await tester.pumpWidget(createTestWidget(documentType: DocumentType.receipt));
+    testWidgets('should show correct document type for receipts', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        createTestWidget(documentType: DocumentType.receipt),
+      );
 
       expect(find.text('Multi-Page Receipt'), findsOneWidget);
       expect(find.byIcon(Icons.receipt), findsOneWidget);
     });
 
-    testWidgets('should show correct document type for other', (WidgetTester tester) async {
-      await tester.pumpWidget(createTestWidget(documentType: DocumentType.other));
+    testWidgets('should show correct document type for other', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        createTestWidget(documentType: DocumentType.other),
+      );
 
       expect(find.text('Multi-Page Document'), findsOneWidget);
       expect(find.byIcon(Icons.document_scanner), findsOneWidget);
     });
 
     group('Page Management View', () {
-      testWidgets('should show page management structure', (WidgetTester tester) async {
+      testWidgets('should show page management structure', (
+        WidgetTester tester,
+      ) async {
         await tester.pumpWidget(createTestWidget());
 
         // Check for the basic structure that would be used when pages exist
@@ -119,7 +147,9 @@ void main() {
         expect(find.byType(Expanded), findsWidgets);
       });
 
-      testWidgets('should have bottom action bar structure', (WidgetTester tester) async {
+      testWidgets('should have bottom action bar structure', (
+        WidgetTester tester,
+      ) async {
         await tester.pumpWidget(createTestWidget());
 
         // Bottom action bar would appear when pages exist
@@ -129,13 +159,17 @@ void main() {
     });
 
     group('Button Interactions', () {
-      testWidgets('should have proper button tooltips', (WidgetTester tester) async {
+      testWidgets('should have proper button tooltips', (
+        WidgetTester tester,
+      ) async {
         await tester.pumpWidget(createTestWidget());
 
         expect(find.byTooltip('Finalize Document'), findsOneWidget);
       });
 
-      testWidgets('should handle add page button when pages exist', (WidgetTester tester) async {
+      testWidgets('should handle add page button when pages exist', (
+        WidgetTester tester,
+      ) async {
         // This would require mocking a session with pages
         await tester.pumpWidget(createTestWidget());
 
@@ -146,7 +180,9 @@ void main() {
     });
 
     group('Error Handling', () {
-      testWidgets('should display error card structure', (WidgetTester tester) async {
+      testWidgets('should display error card structure', (
+        WidgetTester tester,
+      ) async {
         await tester.pumpWidget(createTestWidget());
 
         // Check for error card structure
@@ -154,9 +190,7 @@ void main() {
       });
 
       testWidgets('should handle error display', (WidgetTester tester) async {
-        await tester.pumpWidget(createTestWidget(
-          onError: (_) {},
-        ));
+        await tester.pumpWidget(createTestWidget(onError: (_) {}));
 
         // Error handling would be tested through service mocking
         expect(find.byType(Card), findsWidgets);
@@ -164,7 +198,9 @@ void main() {
     });
 
     group('Document Types', () {
-      testWidgets('should handle all document types correctly', (WidgetTester tester) async {
+      testWidgets('should handle all document types correctly', (
+        WidgetTester tester,
+      ) async {
         final documentTypes = [
           DocumentType.document,
           DocumentType.manual,
@@ -174,7 +210,7 @@ void main() {
 
         for (final docType in documentTypes) {
           await tester.pumpWidget(createTestWidget(documentType: docType));
-          
+
           switch (docType) {
             case DocumentType.document:
               expect(find.text('Multi-Page Document'), findsOneWidget);
@@ -193,14 +229,18 @@ void main() {
               expect(find.byIcon(Icons.document_scanner), findsOneWidget);
               break;
           }
-          
-          await tester.pumpWidget(createTestWidget()); // Reset for next iteration
+
+          await tester.pumpWidget(
+            createTestWidget(),
+          ); // Reset for next iteration
         }
       });
     });
 
     group('Initial View Content', () {
-      testWidgets('should show proper initial view content', (WidgetTester tester) async {
+      testWidgets('should show proper initial view content', (
+        WidgetTester tester,
+      ) async {
         await tester.pumpWidget(createTestWidget());
 
         expect(find.text('No pages scanned yet'), findsOneWidget);
@@ -208,7 +248,9 @@ void main() {
         expect(find.byIcon(Icons.scanner), findsOneWidget);
       });
 
-      testWidgets('should have proper initial view layout', (WidgetTester tester) async {
+      testWidgets('should have proper initial view layout', (
+        WidgetTester tester,
+      ) async {
         await tester.pumpWidget(createTestWidget());
 
         expect(find.byType(Column), findsWidgets);
@@ -218,7 +260,9 @@ void main() {
     });
 
     group('Processing States', () {
-      testWidgets('should show processing indicators', (WidgetTester tester) async {
+      testWidgets('should show processing indicators', (
+        WidgetTester tester,
+      ) async {
         await tester.pumpWidget(createTestWidget());
 
         // Trigger processing by tapping a scan button
@@ -231,7 +275,9 @@ void main() {
     });
 
     group('Layout Structure', () {
-      testWidgets('should have proper widget hierarchy', (WidgetTester tester) async {
+      testWidgets('should have proper widget hierarchy', (
+        WidgetTester tester,
+      ) async {
         await tester.pumpWidget(createTestWidget());
 
         expect(find.byType(Scaffold), findsOneWidget);
@@ -240,7 +286,9 @@ void main() {
         expect(find.byType(Expanded), findsWidgets);
       });
 
-      testWidgets('should have proper action buttons', (WidgetTester tester) async {
+      testWidgets('should have proper action buttons', (
+        WidgetTester tester,
+      ) async {
         await tester.pumpWidget(createTestWidget());
 
         expect(find.byType(ElevatedButton), findsAtLeastNWidgets(2));
@@ -249,7 +297,9 @@ void main() {
     });
 
     group('Page Reorder Dialog', () {
-      testWidgets('should have reorder dialog structure', (WidgetTester tester) async {
+      testWidgets('should have reorder dialog structure', (
+        WidgetTester tester,
+      ) async {
         // The reorder dialog would be shown when pages exist and reorder is clicked
         await tester.pumpWidget(createTestWidget());
 
@@ -259,7 +309,9 @@ void main() {
     });
 
     group('Page Preview', () {
-      testWidgets('should have preview mode structure', (WidgetTester tester) async {
+      testWidgets('should have preview mode structure', (
+        WidgetTester tester,
+      ) async {
         // Preview mode would be shown when a page is tapped
         await tester.pumpWidget(createTestWidget());
 

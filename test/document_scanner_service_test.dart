@@ -49,14 +49,15 @@ void main() {
   // Helper: stub processImageWithAutoCrop to return a valid result map
   // ---------------------------------------------------------------------------
   void stubAutoCrop(Uint8List processedData) {
-    when(mockImageProcessor.processImageWithAutoCrop(any, any))
-        .thenAnswer((_) async => <String, dynamic>{
-              'processedImageData': processedData,
-              'detectedEdges': <Offset>[],
-              'metadata': <String, dynamic>{
-                'autoCrop': {'applied': false},
-              },
-            });
+    when(mockImageProcessor.processImageWithAutoCrop(any, any)).thenAnswer(
+      (_) async => <String, dynamic>{
+        'processedImageData': processedData,
+        'detectedEdges': <Offset>[],
+        'metadata': <String, dynamic>{
+          'autoCrop': {'applied': false},
+        },
+      },
+    );
   }
 
   // Helper: stub the full save pipeline
@@ -64,29 +65,36 @@ void main() {
     required Uint8List pdfData,
     required String savedPdfPath,
   }) {
-    when(mockPdfGenerator.generatePdf(
-      imageData: anyNamed('imageData'),
-      documentType: anyNamed('documentType'),
-      resolution: anyNamed('resolution'),
-      documentFormat: anyNamed('documentFormat'),
-      metadata: anyNamed('metadata'),
-    )).thenAnswer((_) async => pdfData);
+    when(
+      mockPdfGenerator.generatePdf(
+        imageData: anyNamed('imageData'),
+        documentType: anyNamed('documentType'),
+        resolution: anyNamed('resolution'),
+        documentFormat: anyNamed('documentFormat'),
+        metadata: anyNamed('metadata'),
+      ),
+    ).thenAnswer((_) async => pdfData);
 
-    when(mockStorageHelper.getExternalStorageDirectory())
-        .thenAnswer((_) async => Directory.systemTemp);
+    when(
+      mockStorageHelper.getExternalStorageDirectory(),
+    ).thenAnswer((_) async => Directory.systemTemp);
 
-    when(mockStorageHelper.generateFilename(
-      documentType: anyNamed('documentType'),
-      timestamp: anyNamed('timestamp'),
-      customFilename: anyNamed('customFilename'),
-      metadata: anyNamed('metadata'),
-    )).thenReturn('test_filename');
+    when(
+      mockStorageHelper.generateFilename(
+        documentType: anyNamed('documentType'),
+        timestamp: anyNamed('timestamp'),
+        customFilename: anyNamed('customFilename'),
+        metadata: anyNamed('metadata'),
+      ),
+    ).thenReturn('test_filename');
 
-    when(mockStorageHelper.savePdfFile(
-      directory: anyNamed('directory'),
-      filename: anyNamed('filename'),
-      pdfData: anyNamed('pdfData'),
-    )).thenAnswer((_) async => savedPdfPath);
+    when(
+      mockStorageHelper.savePdfFile(
+        directory: anyNamed('directory'),
+        filename: anyNamed('filename'),
+        pdfData: anyNamed('pdfData'),
+      ),
+    ).thenAnswer((_) async => savedPdfPath);
   }
 
   // ---------------------------------------------------------------------------
@@ -101,9 +109,11 @@ void main() {
         path: '/test/image.jpg',
       );
 
-      when(mockCameraService.captureFromCamera(
-              imageQuality: anyNamed('imageQuality')))
-          .thenAnswer((_) async => captureResult);
+      when(
+        mockCameraService.captureFromCamera(
+          imageQuality: anyNamed('imageQuality'),
+        ),
+      ).thenAnswer((_) async => captureResult);
 
       // processImageWithAutoCrop is called for auto-crop in editor path;
       // it may throw (caught silently), so stub it to avoid noise.
@@ -120,9 +130,11 @@ void main() {
     });
 
     test('returns cancelled result when user cancels capture', () async {
-      when(mockCameraService.captureFromCamera(
-              imageQuality: anyNamed('imageQuality')))
-          .thenAnswer((_) async => CaptureResult.cancelled());
+      when(
+        mockCameraService.captureFromCamera(
+          imageQuality: anyNamed('imageQuality'),
+        ),
+      ).thenAnswer((_) async => CaptureResult.cancelled());
 
       final result = await scannerService.scanDocument(
         documentType: DocumentType.receipt,
@@ -133,10 +145,13 @@ void main() {
     });
 
     test('returns error result when camera permission denied', () async {
-      when(mockCameraService.captureFromCamera(
-              imageQuality: anyNamed('imageQuality')))
-          .thenAnswer((_) async =>
-              CaptureResult.error('Camera permission denied'));
+      when(
+        mockCameraService.captureFromCamera(
+          imageQuality: anyNamed('imageQuality'),
+        ),
+      ).thenAnswer(
+        (_) async => CaptureResult.error('Camera permission denied'),
+      );
 
       final result = await scannerService.scanDocument(
         documentType: DocumentType.receipt,
@@ -151,15 +166,22 @@ void main() {
       final processedImageData = Uint8List.fromList([5, 6, 7, 8]);
       final pdfData = Uint8List.fromList([9, 10, 11, 12]);
 
-      when(mockCameraService.captureFromCamera(
-              imageQuality: anyNamed('imageQuality')))
-          .thenAnswer((_) async => CaptureResult.success(
-                imageData: mockImageData,
-                path: '/test/image.jpg',
-              ));
+      when(
+        mockCameraService.captureFromCamera(
+          imageQuality: anyNamed('imageQuality'),
+        ),
+      ).thenAnswer(
+        (_) async => CaptureResult.success(
+          imageData: mockImageData,
+          path: '/test/image.jpg',
+        ),
+      );
 
       stubAutoCrop(processedImageData);
-      stubSavePipeline(pdfData: pdfData, savedPdfPath: '/test/test_receipt.pdf');
+      stubSavePipeline(
+        pdfData: pdfData,
+        savedPdfPath: '/test/test_receipt.pdf',
+      );
 
       final result = await scannerService.scanDocument(
         documentType: DocumentType.receipt,
@@ -169,13 +191,15 @@ void main() {
       expect(result.success, true);
       expect(result.document!.pdfPath, '/test/test_receipt.pdf');
       verify(mockImageProcessor.processImageWithAutoCrop(any, any)).called(1);
-      verify(mockPdfGenerator.generatePdf(
-        imageData: anyNamed('imageData'),
-        documentType: anyNamed('documentType'),
-        resolution: anyNamed('resolution'),
-        documentFormat: anyNamed('documentFormat'),
-        metadata: anyNamed('metadata'),
-      )).called(1);
+      verify(
+        mockPdfGenerator.generatePdf(
+          imageData: anyNamed('imageData'),
+          documentType: anyNamed('documentType'),
+          resolution: anyNamed('resolution'),
+          documentFormat: anyNamed('documentFormat'),
+          metadata: anyNamed('metadata'),
+        ),
+      ).called(1);
     });
   });
 
@@ -191,9 +215,11 @@ void main() {
         path: '/test/gallery.jpg',
       );
 
-      when(mockCameraService.importFromGallery(
-              imageQuality: anyNamed('imageQuality')))
-          .thenAnswer((_) async => captureResult);
+      when(
+        mockCameraService.importFromGallery(
+          imageQuality: anyNamed('imageQuality'),
+        ),
+      ).thenAnswer((_) async => captureResult);
 
       stubAutoCrop(mockImageData);
 
@@ -208,9 +234,11 @@ void main() {
     });
 
     test('returns cancelled result when user cancels import', () async {
-      when(mockCameraService.importFromGallery(
-              imageQuality: anyNamed('imageQuality')))
-          .thenAnswer((_) async => CaptureResult.cancelled());
+      when(
+        mockCameraService.importFromGallery(
+          imageQuality: anyNamed('imageQuality'),
+        ),
+      ).thenAnswer((_) async => CaptureResult.cancelled());
 
       final result = await scannerService.importDocument(
         documentType: DocumentType.document,
@@ -231,16 +259,22 @@ void main() {
       final processedImageData = Uint8List.fromList([5, 6, 7, 8]);
       final pdfData = Uint8List.fromList([9, 10, 11, 12]);
 
-      when(mockCameraService.captureFromCamera(
-              imageQuality: anyNamed('imageQuality')))
-          .thenAnswer((_) async => CaptureResult.success(
-                imageData: mockImageData,
-                path: '/test/image.jpg',
-              ));
+      when(
+        mockCameraService.captureFromCamera(
+          imageQuality: anyNamed('imageQuality'),
+        ),
+      ).thenAnswer(
+        (_) async => CaptureResult.success(
+          imageData: mockImageData,
+          path: '/test/image.jpg',
+        ),
+      );
 
       stubAutoCrop(processedImageData);
       stubSavePipeline(
-          pdfData: pdfData, savedPdfPath: '/test/test_document.pdf');
+        pdfData: pdfData,
+        savedPdfPath: '/test/test_document.pdf',
+      );
 
       final result = await scannerService.scanDocumentWithProcessing(
         documentType: DocumentType.document,
@@ -263,16 +297,19 @@ void main() {
       final processedImageData = Uint8List.fromList([5, 6, 7, 8]);
       final pdfData = Uint8List.fromList([9, 10, 11, 12]);
 
-      when(mockCameraService.importFromGallery(
-              imageQuality: anyNamed('imageQuality')))
-          .thenAnswer((_) async => CaptureResult.success(
-                imageData: mockImageData,
-                path: '/test/gallery.jpg',
-              ));
+      when(
+        mockCameraService.importFromGallery(
+          imageQuality: anyNamed('imageQuality'),
+        ),
+      ).thenAnswer(
+        (_) async => CaptureResult.success(
+          imageData: mockImageData,
+          path: '/test/gallery.jpg',
+        ),
+      );
 
       stubAutoCrop(processedImageData);
-      stubSavePipeline(
-          pdfData: pdfData, savedPdfPath: '/test/test_import.pdf');
+      stubSavePipeline(pdfData: pdfData, savedPdfPath: '/test/test_import.pdf');
 
       final result = await scannerService.importDocumentWithProcessing(
         documentType: DocumentType.document,
@@ -319,20 +356,24 @@ void main() {
       );
 
       stubSavePipeline(
-          pdfData: pdfData, savedPdfPath: '/test/test_receipt.pdf');
+        pdfData: pdfData,
+        savedPdfPath: '/test/test_receipt.pdf',
+      );
 
       final result = await scannerService.finalizeScanResult(document, null);
 
       expect(result.success, true);
       expect(result.document!.pdfPath, '/test/test_receipt.pdf');
       expect(result.document!.metadata['finalized'], true);
-      verify(mockPdfGenerator.generatePdf(
-        imageData: anyNamed('imageData'),
-        documentType: anyNamed('documentType'),
-        resolution: anyNamed('resolution'),
-        documentFormat: anyNamed('documentFormat'),
-        metadata: anyNamed('metadata'),
-      )).called(1);
+      verify(
+        mockPdfGenerator.generatePdf(
+          imageData: anyNamed('imageData'),
+          documentType: anyNamed('documentType'),
+          resolution: anyNamed('resolution'),
+          documentFormat: anyNamed('documentFormat'),
+          metadata: anyNamed('metadata'),
+        ),
+      ).called(1);
     });
   });
 
@@ -370,32 +411,40 @@ void main() {
         pages: [page1, page2],
       );
 
-      when(mockCameraService.requestStoragePermission())
-          .thenAnswer((_) async => true);
+      when(
+        mockCameraService.requestStoragePermission(),
+      ).thenAnswer((_) async => true);
 
-      when(mockPdfGenerator.generateMultiPagePdf(
-        imageDataList: anyNamed('imageDataList'),
-        documentType: anyNamed('documentType'),
-        resolution: anyNamed('resolution'),
-        documentFormat: anyNamed('documentFormat'),
-        metadata: anyNamed('metadata'),
-      )).thenAnswer((_) async => pdfData);
+      when(
+        mockPdfGenerator.generateMultiPagePdf(
+          imageDataList: anyNamed('imageDataList'),
+          documentType: anyNamed('documentType'),
+          resolution: anyNamed('resolution'),
+          documentFormat: anyNamed('documentFormat'),
+          metadata: anyNamed('metadata'),
+        ),
+      ).thenAnswer((_) async => pdfData);
 
-      when(mockStorageHelper.getExternalStorageDirectory())
-          .thenAnswer((_) async => Directory.systemTemp);
+      when(
+        mockStorageHelper.getExternalStorageDirectory(),
+      ).thenAnswer((_) async => Directory.systemTemp);
 
-      when(mockStorageHelper.generateFilename(
-        documentType: anyNamed('documentType'),
-        timestamp: anyNamed('timestamp'),
-        customFilename: anyNamed('customFilename'),
-        metadata: anyNamed('metadata'),
-      )).thenReturn('test_manual');
+      when(
+        mockStorageHelper.generateFilename(
+          documentType: anyNamed('documentType'),
+          timestamp: anyNamed('timestamp'),
+          customFilename: anyNamed('customFilename'),
+          metadata: anyNamed('metadata'),
+        ),
+      ).thenReturn('test_manual');
 
-      when(mockStorageHelper.savePdfFile(
-        directory: anyNamed('directory'),
-        filename: anyNamed('filename'),
-        pdfData: anyNamed('pdfData'),
-      )).thenAnswer((_) async => '/test/test_manual.pdf');
+      when(
+        mockStorageHelper.savePdfFile(
+          directory: anyNamed('directory'),
+          filename: anyNamed('filename'),
+          pdfData: anyNamed('pdfData'),
+        ),
+      ).thenAnswer((_) async => '/test/test_manual.pdf');
 
       final result = await scannerService.finalizeMultiPageSession(session);
 
@@ -403,13 +452,15 @@ void main() {
       expect(result.document!.pdfPath, '/test/test_manual.pdf');
       expect(result.document!.isMultiPage, true);
       expect(result.document!.pages.length, 2);
-      verify(mockPdfGenerator.generateMultiPagePdf(
-        imageDataList: anyNamed('imageDataList'),
-        documentType: anyNamed('documentType'),
-        resolution: anyNamed('resolution'),
-        documentFormat: anyNamed('documentFormat'),
-        metadata: anyNamed('metadata'),
-      )).called(1);
+      verify(
+        mockPdfGenerator.generateMultiPagePdf(
+          imageDataList: anyNamed('imageDataList'),
+          documentType: anyNamed('documentType'),
+          resolution: anyNamed('resolution'),
+          documentFormat: anyNamed('documentFormat'),
+          metadata: anyNamed('metadata'),
+        ),
+      ).called(1);
     });
 
     test('returns error when no pages in session', () async {
@@ -444,8 +495,9 @@ void main() {
         pages: [page1],
       );
 
-      when(mockCameraService.requestStoragePermission())
-          .thenAnswer((_) async => false);
+      when(
+        mockCameraService.requestStoragePermission(),
+      ).thenAnswer((_) async => false);
 
       final result = await scannerService.finalizeMultiPageSession(session);
 

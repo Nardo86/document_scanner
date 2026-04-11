@@ -48,8 +48,7 @@ class _DocumentScannerShowcaseAppState
           MultiPageScreen.routeName: (_) => const MultiPageScreen(),
           PdfPreviewShowcaseScreen.routeName: (_) =>
               const PdfPreviewShowcaseScreen(),
-          CapabilitiesLabScreen.routeName: (_) =>
-              const CapabilitiesLabScreen(),
+          CapabilitiesLabScreen.routeName: (_) => const CapabilitiesLabScreen(),
         },
         home: _TabNavigationShell(
           currentIndex: _currentIndex,
@@ -120,7 +119,11 @@ class _TabNavigationShell extends StatelessWidget {
             Offset.zero & overlay.size,
           )
         : RelativeRect.fromLTRB(
-            screenSize.width - 200, screenSize.height - 200, 16, 80);
+            screenSize.width - 200,
+            screenSize.height - 200,
+            16,
+            80,
+          );
 
     showMenu(
       context: context,
@@ -158,10 +161,7 @@ class _TabNavigationShell extends StatelessWidget {
   }
 
   void _showHistoryDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => const _HistoryDialog(),
-    );
+    showDialog(context: context, builder: (context) => const _HistoryDialog());
   }
 }
 
@@ -189,10 +189,12 @@ class _ConfigurationDialogState extends State<_ConfigurationDialog> {
     super.initState();
     final state = ShowcaseStateScope.read(context);
     _appNameController = TextEditingController(text: state.appName);
-    _directoryController =
-        TextEditingController(text: state.customDirectory ?? '');
-    _filenameController =
-        TextEditingController(text: state.defaultFilename ?? '');
+    _directoryController = TextEditingController(
+      text: state.customDirectory ?? '',
+    );
+    _filenameController = TextEditingController(
+      text: state.defaultFilename ?? '',
+    );
   }
 
   @override
@@ -302,8 +304,9 @@ class _ConfigurationDialogState extends State<_ConfigurationDialog> {
               appName: _appNameController.text,
               customDirectory: _directoryController.text,
             );
-            ShowcaseStateScope.read(context)
-                .setDefaultFilename(_filenameController.text);
+            ShowcaseStateScope.read(
+              context,
+            ).setDefaultFilename(_filenameController.text);
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Storage configuration applied')),
             );
@@ -324,7 +327,9 @@ class _HistoryDialog extends StatelessWidget {
   const _HistoryDialog();
 
   IconData _flowIcon(String flow) {
-    if (flow.contains('Single') || flow.contains('Camera') || flow.contains('Gallery')) {
+    if (flow.contains('Single') ||
+        flow.contains('Camera') ||
+        flow.contains('Gallery')) {
       return Icons.document_scanner;
     }
     if (flow.contains('Multi')) return Icons.menu_book;
@@ -376,15 +381,17 @@ class _HistoryDialog extends StatelessWidget {
                           children: [
                             Row(
                               children: [
-                                Icon(_flowIcon(log.flow),
-                                    color: colorScheme.primary),
+                                Icon(
+                                  _flowIcon(log.flow),
+                                  color: colorScheme.primary,
+                                ),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
                                     log.flow,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleMedium,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleMedium,
                                   ),
                                 ),
                                 Icon(

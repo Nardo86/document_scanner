@@ -35,9 +35,7 @@ void main() {
       final filename = storageHelper.generateFilename(
         documentType: DocumentType.receipt,
         timestamp: DateTime(2024, 1, 15),
-        metadata: {
-          'suggestedFilename': 'suggested_name',
-        },
+        metadata: {'suggestedFilename': 'suggested_name'},
       );
 
       expect(filename, 'suggested_name');
@@ -47,10 +45,7 @@ void main() {
       final filename = storageHelper.generateFilename(
         documentType: DocumentType.manual,
         timestamp: DateTime(2024, 1, 15),
-        metadata: {
-          'productBrand': 'Samsung',
-          'productModel': 'Galaxy S23',
-        },
+        metadata: {'productBrand': 'Samsung', 'productModel': 'Galaxy S23'},
       );
 
       expect(filename, contains('Samsung'));
@@ -198,9 +193,7 @@ void main() {
   group('StorageHelper - storage configuration', () {
     test('uses custom directory when configured', () async {
       final customDir = path.join(tempDir.path, 'custom_storage');
-      storageHelper.configure(StorageConfig(
-        customDirectory: customDir,
-      ));
+      storageHelper.configure(StorageConfig(customDirectory: customDir));
 
       final directory = await storageHelper.getExternalStorageDirectory();
 
@@ -210,9 +203,7 @@ void main() {
 
     test('creates directory if it does not exist', () async {
       final customDir = path.join(tempDir.path, 'new_directory');
-      storageHelper.configure(StorageConfig(
-        customDirectory: customDir,
-      ));
+      storageHelper.configure(StorageConfig(customDirectory: customDir));
 
       expect(Directory(customDir).existsSync(), false);
 

@@ -7,7 +7,12 @@ import '../services/image_processor.dart';
 /// Widget for editing scanned images with rotation, color filters, and cropping
 class ImageEditingWidget extends StatefulWidget {
   final Uint8List imageData;
-  final Function(Uint8List editedImageData, PdfResolution selectedResolution, DocumentFormat selectedFormat) onImageEdited;
+  final Function(
+    Uint8List editedImageData,
+    PdfResolution selectedResolution,
+    DocumentFormat selectedFormat,
+  )
+  onImageEdited;
   final VoidCallback? onCancel;
   final Uint8List? initialPreviewData;
   final List<Offset>? initialCropCorners;
@@ -27,28 +32,34 @@ class ImageEditingWidget extends StatefulWidget {
 
 class _ImageEditingWidgetState extends State<ImageEditingWidget> {
   final ImageProcessor _imageProcessor = ImageProcessor();
-  
+
   ImageEditingOptions _editingOptions = const ImageEditingOptions();
   Uint8List? _previewImageData;
-  Uint8List? _baseImageData; // Image after rotation/crop but before color filters
+  Uint8List?
+  _baseImageData; // Image after rotation/crop but before color filters
   List<Offset>? _detectedCorners;
   bool _isProcessing = false;
   bool _showCropOverlay = false;
-  PdfResolution _selectedResolution = PdfResolution.size; // Default to Standard (150 DPI)
+  PdfResolution _selectedResolution =
+      PdfResolution.size; // Default to Standard (150 DPI)
   bool _isSettingsExpanded = false; // Track if settings panel is expanded
-  int _rotationQuarterTurns = 0; // Track rotation in 90° increments (0, 1, 2, 3)
+  int _rotationQuarterTurns =
+      0; // Track rotation in 90° increments (0, 1, 2, 3)
 
   @override
   void initState() {
     super.initState();
-    
+
     // Use initial preview data if provided, otherwise use original image
     // This fixes Bug 1: Ensure base and preview images stay synchronized
     _previewImageData = widget.initialPreviewData ?? widget.imageData;
-    _baseImageData = widget.initialPreviewData ?? widget.imageData; // Keep base in sync with preview
-    
+    _baseImageData =
+        widget.initialPreviewData ??
+        widget.imageData; // Keep base in sync with preview
+
     // Use initial crop corners if provided, otherwise detect edges
-    if (widget.initialCropCorners != null && widget.initialCropCorners!.isNotEmpty) {
+    if (widget.initialCropCorners != null &&
+        widget.initialCropCorners!.isNotEmpty) {
       _detectedCorners = widget.initialCropCorners;
     } else {
       _detectDocumentEdges();
@@ -57,7 +68,9 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
 
   Future<void> _detectDocumentEdges() async {
     try {
-      final corners = await _imageProcessor.detectDocumentEdges(widget.imageData);
+      final corners = await _imageProcessor.detectDocumentEdges(
+        widget.imageData,
+      );
       setState(() {
         _detectedCorners = corners;
       });
@@ -77,19 +90,21 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
   Future<void> _updatePreview() async {
     // Apply only color filter to base image (after rotation/crop)
     if (_baseImageData == null) return;
-    
+
     setState(() {
       _isProcessing = true;
     });
 
     try {
       // Apply only color filter to base image
-      final filterOptions = ImageEditingOptions(colorFilter: _editingOptions.colorFilter);
+      final filterOptions = ImageEditingOptions(
+        colorFilter: _editingOptions.colorFilter,
+      );
       final processedData = await _imageProcessor.applyImageEditing(
         _baseImageData!,
         filterOptions,
       );
-      
+
       setState(() {
         _previewImageData = processedData;
         _isProcessing = false;
@@ -98,9 +113,9 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
       setState(() {
         _isProcessing = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error updating preview: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error updating preview: $e')));
     }
   }
 
@@ -127,29 +142,33 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
     try {
       // Convert quarter turns to degrees (0, 90, 180, or 270)
       final rotationDegrees = _rotationQuarterTurns * 90;
-      
+
       // Apply rotation from the original image (not incrementally from preview)
       // This prevents cumulative distortion
-      final rotationOptions = ImageEditingOptions(rotationDegrees: rotationDegrees);
+      final rotationOptions = ImageEditingOptions(
+        rotationDegrees: rotationDegrees,
+      );
       final rotatedData = await _imageProcessor.applyImageEditing(
         widget.imageData,
         rotationOptions,
       );
-      
+
       setState(() {
         _baseImageData = rotatedData; // Update base image after rotation
         _previewImageData = rotatedData; // Update preview to show rotated image
         // Update total rotation for tracking
-        _editingOptions = _editingOptions.copyWith(rotationDegrees: rotationDegrees);
+        _editingOptions = _editingOptions.copyWith(
+          rotationDegrees: rotationDegrees,
+        );
         _isProcessing = false;
       });
     } catch (e) {
       setState(() {
         _isProcessing = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error rotating image: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error rotating image: $e')));
     }
   }
 
@@ -172,13 +191,13 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
         _baseImageData!,
         filterOptions,
       );
-      
+
       setState(() {
         _previewImageData = filteredData;
         _editingOptions = _editingOptions.copyWith(colorFilter: filter);
         _isProcessing = false;
       });
-      
+
       // Show success feedback for filter application
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -193,9 +212,9 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
         _isProcessing = false;
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error applying filter: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error applying filter: $e')));
       }
     }
   }
@@ -205,7 +224,9 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
       _showCropOverlay = !_showCropOverlay;
       if (_showCropOverlay && _detectedCorners != null) {
         // Don't update preview when entering crop mode, just show overlay
-        _editingOptions = _editingOptions.copyWith(cropCorners: _detectedCorners);
+        _editingOptions = _editingOptions.copyWith(
+          cropCorners: _detectedCorners,
+        );
       } else {
         // When exiting crop mode, apply the crop or reset
         _editingOptions = _editingOptions.copyWith(cropCorners: null);
@@ -232,21 +253,23 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
         widget.imageData, // Use original image for crop coordinates
         cropOptions,
       );
-      
+
       setState(() {
         _previewImageData = croppedData;
         _baseImageData = croppedData; // Update base image after crop
         _showCropOverlay = false;
-        _editingOptions = _editingOptions.copyWith(cropCorners: _detectedCorners);
+        _editingOptions = _editingOptions.copyWith(
+          cropCorners: _detectedCorners,
+        );
         _isProcessing = false;
       });
     } catch (e) {
       setState(() {
         _isProcessing = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error applying crop: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error applying crop: $e')));
     }
   }
 
@@ -262,7 +285,11 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
 
   void _confirmEditing() {
     if (_previewImageData != null) {
-      widget.onImageEdited(_previewImageData!, _selectedResolution, _editingOptions.documentFormat);
+      widget.onImageEdited(
+        _previewImageData!,
+        _selectedResolution,
+        _editingOptions.documentFormat,
+      );
     }
   }
 
@@ -306,29 +333,32 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
                 child: _isProcessing
                     ? const CircularProgressIndicator()
                     : _previewImageData != null
-                        ? _showCropOverlay && _detectedCorners != null
-                            ? CropOverlayWidget(
-                                imageData: widget.imageData, // Use original image data for overlay
-                                corners: _detectedCorners!,
-                                onCornersChanged: (newCorners) {
-                                  setState(() {
-                                    _detectedCorners = newCorners;
-                                    _editingOptions = _editingOptions.copyWith(cropCorners: newCorners);
-                                  });
-                                  // No need to update preview here - just store the corners
-                                },
-                              )
-                            : InteractiveViewer(
-                                child: Image.memory(
-                                  _previewImageData!,
-                                  fit: BoxFit.contain,
-                                ),
-                              )
-                        : const Icon(Icons.image, size: 64),
+                    ? _showCropOverlay && _detectedCorners != null
+                          ? CropOverlayWidget(
+                              imageData: widget
+                                  .imageData, // Use original image data for overlay
+                              corners: _detectedCorners!,
+                              onCornersChanged: (newCorners) {
+                                setState(() {
+                                  _detectedCorners = newCorners;
+                                  _editingOptions = _editingOptions.copyWith(
+                                    cropCorners: newCorners,
+                                  );
+                                });
+                                // No need to update preview here - just store the corners
+                              },
+                            )
+                          : InteractiveViewer(
+                              child: Image.memory(
+                                _previewImageData!,
+                                fit: BoxFit.contain,
+                              ),
+                            )
+                    : const Icon(Icons.image, size: 64),
               ),
             ),
           ),
-          
+
           // Controls
           GestureDetector(
             onTap: () {
@@ -365,135 +395,207 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
                 ],
               ),
               child: Column(
-              children: [
-                // Rotation and crop controls (always visible)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    IconButton(
-                      onPressed: _rotateCounterclockwise,
-                      icon: const Icon(Icons.rotate_left),
-                      tooltip: 'Rotate Left',
-                    ),
-                    IconButton(
-                      onPressed: _rotateClockwise,
-                      icon: const Icon(Icons.rotate_right),
-                      tooltip: 'Rotate Right',
-                    ),
-                    IconButton(
-                      onPressed: _toggleCropMode,
-                      icon: Icon(_showCropOverlay ? Icons.crop_free : Icons.crop),
-                      tooltip: _showCropOverlay ? 'Disable Crop' : 'Enable Crop',
-                    ),
-                    if (_showCropOverlay)
+                children: [
+                  // Rotation and crop controls (always visible)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
                       IconButton(
-                        onPressed: _applyCrop,
-                        icon: const Icon(Icons.check),
-                        tooltip: 'Apply Crop',
-                        color: Colors.green,
+                        onPressed: _rotateCounterclockwise,
+                        icon: const Icon(Icons.rotate_left),
+                        tooltip: 'Rotate Left',
                       ),
+                      IconButton(
+                        onPressed: _rotateClockwise,
+                        icon: const Icon(Icons.rotate_right),
+                        tooltip: 'Rotate Right',
+                      ),
+                      IconButton(
+                        onPressed: _toggleCropMode,
+                        icon: Icon(
+                          _showCropOverlay ? Icons.crop_free : Icons.crop,
+                        ),
+                        tooltip: _showCropOverlay
+                            ? 'Disable Crop'
+                            : 'Enable Crop',
+                      ),
+                      if (_showCropOverlay)
+                        IconButton(
+                          onPressed: _applyCrop,
+                          icon: const Icon(Icons.check),
+                          tooltip: 'Apply Crop',
+                          color: Colors.green,
+                        ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // Compact view: Active settings indicators
+                  if (!_isSettingsExpanded) ...[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _buildActiveSettingIndicator(
+                          'Filter',
+                          _getColorFilterIcon(_editingOptions.colorFilter),
+                          _editingOptions.colorFilter != ColorFilter.none,
+                          () => setState(() => _isSettingsExpanded = true),
+                        ),
+                        _buildActiveSettingIndicator(
+                          'Format',
+                          _getDocumentFormatIcon(
+                            _editingOptions.documentFormat,
+                          ),
+                          _editingOptions.documentFormat != DocumentFormat.auto,
+                          () => setState(() => _isSettingsExpanded = true),
+                        ),
+                        _buildActiveSettingIndicator(
+                          'PDF',
+                          _getResolutionIcon(_selectedResolution),
+                          _selectedResolution != PdfResolution.size,
+                          () => setState(() => _isSettingsExpanded = true),
+                        ),
+                        IconButton(
+                          onPressed: () =>
+                              setState(() => _isSettingsExpanded = true),
+                          icon: const Icon(Icons.settings),
+                          tooltip: 'Show All Settings',
+                        ),
+                      ],
+                    ),
                   ],
-                ),
-                
-                const SizedBox(height: 12),
-                
-                // Compact view: Active settings indicators
-                if (!_isSettingsExpanded) ...[
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      _buildActiveSettingIndicator(
-                        'Filter',
-                        _getColorFilterIcon(_editingOptions.colorFilter),
-                        _editingOptions.colorFilter != ColorFilter.none,
-                        () => setState(() => _isSettingsExpanded = true),
-                      ),
-                      _buildActiveSettingIndicator(
-                        'Format',
-                        _getDocumentFormatIcon(_editingOptions.documentFormat),
-                        _editingOptions.documentFormat != DocumentFormat.auto,
-                        () => setState(() => _isSettingsExpanded = true),
-                      ),
-                      _buildActiveSettingIndicator(
-                        'PDF',
-                        _getResolutionIcon(_selectedResolution),
-                        _selectedResolution != PdfResolution.size,
-                        () => setState(() => _isSettingsExpanded = true),
-                      ),
-                      IconButton(
-                        onPressed: () => setState(() => _isSettingsExpanded = true),
-                        icon: const Icon(Icons.settings),
-                        tooltip: 'Show All Settings',
-                      ),
-                    ],
-                  ),
+
+                  // Expanded view: All settings
+                  if (_isSettingsExpanded) ...[
+                    // Header with collapse button
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Settings',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        IconButton(
+                          onPressed: () =>
+                              setState(() => _isSettingsExpanded = false),
+                          icon: const Icon(Icons.keyboard_arrow_down),
+                          tooltip: 'Collapse Settings',
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    // Color filter controls
+                    const Text(
+                      'Color Filter:',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _buildFilterButton(
+                          'Original',
+                          ColorFilter.none,
+                          Icons.image,
+                        ),
+                        _buildFilterButton(
+                          'Enhanced',
+                          ColorFilter.highContrast,
+                          Icons.auto_fix_high,
+                        ),
+                        _buildFilterButton(
+                          'B&W',
+                          ColorFilter.blackAndWhite,
+                          Icons.filter_b_and_w,
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // Document format controls
+                    const Text(
+                      'Document Format:',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      alignment: WrapAlignment.spaceEvenly,
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _buildFormatButton(
+                          'Auto',
+                          DocumentFormat.auto,
+                          Icons.auto_fix_normal,
+                        ),
+                        _buildFormatButton(
+                          'A4',
+                          DocumentFormat.isoA,
+                          Icons.description,
+                        ),
+                        _buildFormatButton(
+                          'Letter',
+                          DocumentFormat.usLetter,
+                          Icons.document_scanner,
+                        ),
+                        _buildFormatButton(
+                          'Legal',
+                          DocumentFormat.usLegal,
+                          Icons.article,
+                        ),
+                        _buildFormatButton(
+                          'Receipt',
+                          DocumentFormat.receipt,
+                          Icons.receipt,
+                        ),
+                        _buildFormatButton(
+                          'Square',
+                          DocumentFormat.square,
+                          Icons.crop_square,
+                        ),
+                        _buildFormatButton(
+                          'Card',
+                          DocumentFormat.businessCard,
+                          Icons.credit_card,
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // PDF Resolution controls
+                    const Text(
+                      'PDF Quality:',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _buildResolutionButton(
+                          'Standard',
+                          PdfResolution.size,
+                          Icons.compress,
+                        ),
+                        _buildResolutionButton(
+                          'High',
+                          PdfResolution.quality,
+                          Icons.high_quality,
+                        ),
+                        _buildResolutionButton(
+                          'Max',
+                          PdfResolution.original,
+                          Icons.hd,
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
-                
-                // Expanded view: All settings
-                if (_isSettingsExpanded) ...[
-                  // Header with collapse button
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Settings', style: TextStyle(fontWeight: FontWeight.bold)),
-                      IconButton(
-                        onPressed: () => setState(() => _isSettingsExpanded = false),
-                        icon: const Icon(Icons.keyboard_arrow_down),
-                        tooltip: 'Collapse Settings',
-                      ),
-                    ],
-                  ),
-                  
-                  const SizedBox(height: 8),
-                  
-                  // Color filter controls
-                  const Text('Color Filter:', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      _buildFilterButton('Original', ColorFilter.none, Icons.image),
-                      _buildFilterButton('Enhanced', ColorFilter.highContrast, Icons.auto_fix_high),
-                      _buildFilterButton('B&W', ColorFilter.blackAndWhite, Icons.filter_b_and_w),
-                    ],
-                  ),
-                  
-                  const SizedBox(height: 16),
-                  
-                  // Document format controls
-                  const Text('Document Format:', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    alignment: WrapAlignment.spaceEvenly,
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _buildFormatButton('Auto', DocumentFormat.auto, Icons.auto_fix_normal),
-                      _buildFormatButton('A4', DocumentFormat.isoA, Icons.description),
-                      _buildFormatButton('Letter', DocumentFormat.usLetter, Icons.document_scanner),
-                      _buildFormatButton('Legal', DocumentFormat.usLegal, Icons.article),
-                      _buildFormatButton('Receipt', DocumentFormat.receipt, Icons.receipt),
-                      _buildFormatButton('Square', DocumentFormat.square, Icons.crop_square),
-                      _buildFormatButton('Card', DocumentFormat.businessCard, Icons.credit_card),
-                    ],
-                  ),
-                  
-                  const SizedBox(height: 16),
-                  
-                  // PDF Resolution controls
-                  const Text('PDF Quality:', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      _buildResolutionButton('Standard', PdfResolution.size, Icons.compress),
-                      _buildResolutionButton('High', PdfResolution.quality, Icons.high_quality),
-                      _buildResolutionButton('Max', PdfResolution.original, Icons.hd),
-                    ],
-                  ),
-                ],
-              ],
-            ),
+              ),
             ),
           ),
         ],
@@ -501,7 +603,12 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
     );
   }
 
-  Widget _buildActiveSettingIndicator(String label, IconData icon, bool isActive, VoidCallback onTap) {
+  Widget _buildActiveSettingIndicator(
+    String label,
+    IconData icon,
+    bool isActive,
+    VoidCallback onTap,
+  ) {
     return Column(
       children: [
         IconButton(
@@ -528,7 +635,7 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
 
   Widget _buildFilterButton(String label, ColorFilter filter, IconData icon) {
     final isSelected = _editingOptions.colorFilter == filter;
-    
+
     return Column(
       children: [
         IconButton(
@@ -553,9 +660,13 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
     );
   }
 
-  Widget _buildResolutionButton(String label, PdfResolution resolution, IconData icon) {
+  Widget _buildResolutionButton(
+    String label,
+    PdfResolution resolution,
+    IconData icon,
+  ) {
     final isSelected = _selectedResolution == resolution;
-    
+
     return Column(
       children: [
         IconButton(
@@ -632,9 +743,13 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
     }
   }
 
-  Widget _buildFormatButton(String label, DocumentFormat format, IconData icon) {
+  Widget _buildFormatButton(
+    String label,
+    DocumentFormat format,
+    IconData icon,
+  ) {
     final isSelected = _editingOptions.documentFormat == format;
-    
+
     return Column(
       children: [
         IconButton(
@@ -663,7 +778,7 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
     setState(() {
       _editingOptions = _editingOptions.copyWith(documentFormat: format);
     });
-    
+
     // If crop mode is active and we have corners, re-apply crop with new format
     if (_showCropOverlay && _detectedCorners != null) {
       _applyCrop();
@@ -690,7 +805,7 @@ class CropOverlayWidget extends StatefulWidget {
 
 class _CropOverlayWidgetState extends State<CropOverlayWidget> {
   Size? _originalImageSize;
-  
+
   @override
   void initState() {
     super.initState();
@@ -710,11 +825,14 @@ class _CropOverlayWidgetState extends State<CropOverlayWidget> {
       final ui.Codec codec = await ui.instantiateImageCodec(widget.imageData);
       final ui.FrameInfo frame = await codec.getNextFrame();
       final ui.Image image = frame.image;
-      
+
       setState(() {
-        _originalImageSize = Size(image.width.toDouble(), image.height.toDouble());
+        _originalImageSize = Size(
+          image.width.toDouble(),
+          image.height.toDouble(),
+        );
       });
-      
+
       image.dispose();
     } catch (_) {
       // Image size detection failed; overlay will not render.
@@ -731,7 +849,7 @@ class _CropOverlayWidgetState extends State<CropOverlayWidget> {
       builder: (context, constraints) {
         final containerSize = Size(constraints.maxWidth, constraints.maxHeight);
         final imageInfo = _calculateImageDisplayInfo(containerSize);
-        
+
         return _CropInteractiveWidget(
           imageData: widget.imageData,
           corners: widget.corners,
@@ -798,14 +916,21 @@ class _CropInteractiveWidgetState extends State<_CropInteractiveWidget> {
   @override
   void initState() {
     super.initState();
-    _currentCorners = _convertToScreenCoordinates(widget.corners, widget.imageInfo);
+    _currentCorners = _convertToScreenCoordinates(
+      widget.corners,
+      widget.imageInfo,
+    );
   }
 
   @override
   void didUpdateWidget(_CropInteractiveWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.corners != widget.corners || oldWidget.imageInfo != widget.imageInfo) {
-      _currentCorners = _convertToScreenCoordinates(widget.corners, widget.imageInfo);
+    if (oldWidget.corners != widget.corners ||
+        oldWidget.imageInfo != widget.imageInfo) {
+      _currentCorners = _convertToScreenCoordinates(
+        widget.corners,
+        widget.imageInfo,
+      );
     }
   }
 
@@ -820,7 +945,7 @@ class _CropInteractiveWidgetState extends State<_CropInteractiveWidget> {
           width: double.infinity,
           height: double.infinity,
         ),
-        
+
         // Crop overlay with real-time updates
         Positioned.fill(
           child: CustomPaint(
@@ -831,7 +956,10 @@ class _CropInteractiveWidgetState extends State<_CropInteractiveWidget> {
             ),
             child: GestureDetector(
               onPanStart: (details) {
-                final cornerIndex = _findNearestCorner(details.localPosition, _currentCorners);
+                final cornerIndex = _findNearestCorner(
+                  details.localPosition,
+                  _currentCorners,
+                );
                 if (cornerIndex != null) {
                   setState(() {
                     _draggedCornerIndex = cornerIndex;
@@ -842,16 +970,20 @@ class _CropInteractiveWidgetState extends State<_CropInteractiveWidget> {
               onPanUpdate: (details) {
                 if (_draggedCornerIndex != null && _isDragging) {
                   setState(() {
-                    _currentCorners[_draggedCornerIndex!] = details.localPosition;
+                    _currentCorners[_draggedCornerIndex!] =
+                        details.localPosition;
                   });
                 }
               },
               onPanEnd: (details) {
                 if (_draggedCornerIndex != null && _isDragging) {
                   // Convert back to original image coordinates and notify parent
-                  final originalCorners = _convertToOriginalCoordinates(_currentCorners, widget.imageInfo);
+                  final originalCorners = _convertToOriginalCoordinates(
+                    _currentCorners,
+                    widget.imageInfo,
+                  );
                   widget.onCornersChanged(originalCorners);
-                  
+
                   setState(() {
                     _draggedCornerIndex = null;
                     _isDragging = false;
@@ -866,8 +998,9 @@ class _CropInteractiveWidgetState extends State<_CropInteractiveWidget> {
   }
 
   int? _findNearestCorner(Offset position, List<Offset> corners) {
-    const double touchRadius = 35.0; // Increased for better touch responsiveness
-    
+    const double touchRadius =
+        35.0; // Increased for better touch responsiveness
+
     for (int i = 0; i < corners.length; i++) {
       final distance = (position - corners[i]).distance;
       if (distance <= touchRadius) {
@@ -877,7 +1010,10 @@ class _CropInteractiveWidgetState extends State<_CropInteractiveWidget> {
     return null;
   }
 
-  List<Offset> _convertToScreenCoordinates(List<Offset> originalCorners, ImageDisplayInfo info) {
+  List<Offset> _convertToScreenCoordinates(
+    List<Offset> originalCorners,
+    ImageDisplayInfo info,
+  ) {
     return originalCorners.map((corner) {
       final x = corner.dx * info.scale + info.offset.dx;
       final y = corner.dy * info.scale + info.offset.dy;
@@ -885,7 +1021,10 @@ class _CropInteractiveWidgetState extends State<_CropInteractiveWidget> {
     }).toList();
   }
 
-  List<Offset> _convertToOriginalCoordinates(List<Offset> screenCorners, ImageDisplayInfo info) {
+  List<Offset> _convertToOriginalCoordinates(
+    List<Offset> screenCorners,
+    ImageDisplayInfo info,
+  ) {
     return screenCorners.map((corner) {
       final x = (corner.dx - info.offset.dx) / info.scale;
       final y = (corner.dy - info.offset.dy) / info.scale;
@@ -894,7 +1033,7 @@ class _CropInteractiveWidgetState extends State<_CropInteractiveWidget> {
   }
 }
 
-/// Custom painter for crop overlay without BlendMode issues  
+/// Custom painter for crop overlay without BlendMode issues
 class _CropOverlayPainter extends CustomPainter {
   final List<Offset> corners;
   final ImageDisplayInfo imageInfo;
@@ -940,30 +1079,32 @@ class _CropOverlayPainter extends CustomPainter {
     for (int i = 0; i < corners.length; i++) {
       final corner = corners[i];
       final isDragged = i == draggedCornerIndex;
-      
+
       // Make dragged corner larger and different color
       final handleRadius = isDragged ? 20.0 : 16.0;
       final centerRadius = isDragged ? 10.0 : 8.0;
-      
+
       // Use different colors for dragged corner
       final draggedHandlePaint = Paint()
-        ..color = isDragged ? Colors.orange.withValues(alpha: 0.8) : Colors.blue.withValues(alpha: 0.8)
+        ..color = isDragged
+            ? Colors.orange.withValues(alpha: 0.8)
+            : Colors.blue.withValues(alpha: 0.8)
         ..style = PaintingStyle.fill;
 
       final draggedStrokePaint = Paint()
         ..color = isDragged ? Colors.orange : Colors.blue
         ..style = PaintingStyle.stroke
         ..strokeWidth = isDragged ? 4 : 3;
-      
+
       // Draw shadow for better visibility
       canvas.drawCircle(corner + const Offset(2, 2), handleRadius, shadowPaint);
-      
+
       // Draw outer circle (larger for better touch)
       canvas.drawCircle(corner, handleRadius, draggedHandlePaint);
-      
+
       // Draw inner circle for better visibility
       canvas.drawCircle(corner, centerRadius, centerPaint);
-      
+
       // Draw border around inner circle
       canvas.drawCircle(corner, centerRadius, draggedStrokePaint);
     }
@@ -994,15 +1135,15 @@ class _CropOverlayPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) {
     if (oldDelegate is! _CropOverlayPainter) return true;
-    
+
     final oldPainter = oldDelegate;
     // Repaint if corners changed or if drag state changed
     if (corners.length != oldPainter.corners.length) return true;
-    
+
     for (int i = 0; i < corners.length; i++) {
       if (corners[i] != oldPainter.corners[i]) return true;
     }
-    
+
     return draggedCornerIndex != oldPainter.draggedCornerIndex;
   }
 }

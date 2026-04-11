@@ -38,8 +38,8 @@ Future<void> openPdfPreview(
 
   if (!context.mounted) return;
 
-  final displayTitle = title ??
-      'Preview ${document.metadata['customFilename'] ?? document.id}';
+  final displayTitle =
+      title ?? 'Preview ${document.metadata['customFilename'] ?? document.id}';
 
   await Navigator.push(
     context,

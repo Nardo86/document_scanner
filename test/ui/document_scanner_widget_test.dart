@@ -32,14 +32,20 @@ void main() {
       );
     }
 
-    testWidgets('should display document scanner with correct title', (WidgetTester tester) async {
-      await tester.pumpWidget(createTestWidget(documentType: DocumentType.receipt));
+    testWidgets('should display document scanner with correct title', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        createTestWidget(documentType: DocumentType.receipt),
+      );
 
       expect(find.text('Scan Receipt'), findsOneWidget);
       expect(find.text('Receipt Scanner'), findsOneWidget);
     });
 
-    testWidgets('should display camera scan option', (WidgetTester tester) async {
+    testWidgets('should display camera scan option', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(createTestWidget());
 
       expect(find.text('Scan with Camera'), findsOneWidget);
@@ -47,7 +53,9 @@ void main() {
       expect(find.byIcon(Icons.camera_alt), findsOneWidget);
     });
 
-    testWidgets('should display import option when enabled', (WidgetTester tester) async {
+    testWidgets('should display import option when enabled', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(createTestWidget(showImportOption: true));
 
       expect(find.text('Import from Gallery'), findsOneWidget);
@@ -55,36 +63,48 @@ void main() {
       expect(find.byIcon(Icons.photo_library), findsOneWidget);
     });
 
-    testWidgets('should not display import option when disabled', (WidgetTester tester) async {
+    testWidgets('should not display import option when disabled', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(createTestWidget(showImportOption: false));
 
       expect(find.text('Import from Gallery'), findsNothing);
       expect(find.byIcon(Icons.photo_library), findsNothing);
     });
 
-    testWidgets('should display custom header when provided', (WidgetTester tester) async {
+    testWidgets('should display custom header when provided', (
+      WidgetTester tester,
+    ) async {
       const customHeader = Text('Custom Header');
       await tester.pumpWidget(createTestWidget(customHeader: customHeader));
 
       expect(find.text('Custom Header'), findsOneWidget);
     });
 
-    testWidgets('should display custom footer when provided', (WidgetTester tester) async {
+    testWidgets('should display custom footer when provided', (
+      WidgetTester tester,
+    ) async {
       const customFooter = Text('Custom Footer');
       await tester.pumpWidget(createTestWidget(customFooter: customFooter));
 
       expect(find.text('Custom Footer'), findsOneWidget);
     });
 
-    testWidgets('should display correct document type information', (WidgetTester tester) async {
-      await tester.pumpWidget(createTestWidget(documentType: DocumentType.manual));
+    testWidgets('should display correct document type information', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        createTestWidget(documentType: DocumentType.manual),
+      );
 
       expect(find.text('Add Manual'), findsOneWidget);
       expect(find.text('Manual Scanner'), findsOneWidget);
       expect(find.byIcon(Icons.menu_book), findsOneWidget);
     });
 
-    testWidgets('should show processing indicator when scanning', (WidgetTester tester) async {
+    testWidgets('should show processing indicator when scanning', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(createTestWidget());
 
       // Simulate scan start by tapping camera button
@@ -93,11 +113,16 @@ void main() {
 
       // Check for processing indicator
       expect(find.text('Processing...'), findsOneWidget);
-      expect(find.text('Please wait while we process your document'), findsOneWidget);
+      expect(
+        find.text('Please wait while we process your document'),
+        findsOneWidget,
+      );
       expect(find.byType(CircularProgressIndicator), findsWidgets);
     });
 
-    testWidgets('should disable buttons during processing', (WidgetTester tester) async {
+    testWidgets('should disable buttons during processing', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(createTestWidget());
 
       // Simulate scan start
@@ -114,10 +139,10 @@ void main() {
       expect(cameraButton.onTap, isNull);
     });
 
-    testWidgets('should display error message when error occurs', (WidgetTester tester) async {
-      await tester.pumpWidget(createTestWidget(
-        onError: (_) {},
-      ));
+    testWidgets('should display error message when error occurs', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(createTestWidget(onError: (_) {}));
 
       // Simulate error state by setting it directly
       // In a real test, you'd mock the service to return an error
@@ -125,8 +150,12 @@ void main() {
       expect(find.byType(Card), findsWidgets); // Error card structure
     });
 
-    testWidgets('should handle document type receipt correctly', (WidgetTester tester) async {
-      await tester.pumpWidget(createTestWidget(documentType: DocumentType.receipt));
+    testWidgets('should handle document type receipt correctly', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        createTestWidget(documentType: DocumentType.receipt),
+      );
 
       expect(find.text('Scan Receipt'), findsOneWidget);
       expect(find.text('Receipt Scanner'), findsOneWidget);
@@ -134,8 +163,12 @@ void main() {
       expect(find.text('Take a photo of the receipt'), findsOneWidget);
     });
 
-    testWidgets('should handle document type other correctly', (WidgetTester tester) async {
-      await tester.pumpWidget(createTestWidget(documentType: DocumentType.other));
+    testWidgets('should handle document type other correctly', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        createTestWidget(documentType: DocumentType.other),
+      );
 
       expect(find.text('Scan Document'), findsOneWidget);
       expect(find.text('Scanner'), findsOneWidget);
@@ -144,29 +177,47 @@ void main() {
     });
 
     group('Document Type Icons', () {
-      testWidgets('should show receipt icon for receipt type', (WidgetTester tester) async {
-        await tester.pumpWidget(createTestWidget(documentType: DocumentType.receipt));
+      testWidgets('should show receipt icon for receipt type', (
+        WidgetTester tester,
+      ) async {
+        await tester.pumpWidget(
+          createTestWidget(documentType: DocumentType.receipt),
+        );
         expect(find.byIcon(Icons.receipt), findsOneWidget);
       });
 
-      testWidgets('should show manual icon for manual type', (WidgetTester tester) async {
-        await tester.pumpWidget(createTestWidget(documentType: DocumentType.manual));
+      testWidgets('should show manual icon for manual type', (
+        WidgetTester tester,
+      ) async {
+        await tester.pumpWidget(
+          createTestWidget(documentType: DocumentType.manual),
+        );
         expect(find.byIcon(Icons.menu_book), findsOneWidget);
       });
 
-      testWidgets('should show description icon for document type', (WidgetTester tester) async {
-        await tester.pumpWidget(createTestWidget(documentType: DocumentType.document));
+      testWidgets('should show description icon for document type', (
+        WidgetTester tester,
+      ) async {
+        await tester.pumpWidget(
+          createTestWidget(documentType: DocumentType.document),
+        );
         expect(find.byIcon(Icons.description), findsOneWidget);
       });
 
-      testWidgets('should show scanner icon for other type', (WidgetTester tester) async {
-        await tester.pumpWidget(createTestWidget(documentType: DocumentType.other));
+      testWidgets('should show scanner icon for other type', (
+        WidgetTester tester,
+      ) async {
+        await tester.pumpWidget(
+          createTestWidget(documentType: DocumentType.other),
+        );
         expect(find.byIcon(Icons.document_scanner), findsOneWidget);
       });
     });
 
     group('User Interactions', () {
-      testWidgets('should handle camera scan button tap', (WidgetTester tester) async {
+      testWidgets('should handle camera scan button tap', (
+        WidgetTester tester,
+      ) async {
         await tester.pumpWidget(createTestWidget());
 
         expect(find.text('Scan with Camera'), findsOneWidget);
@@ -177,7 +228,9 @@ void main() {
         expect(find.text('Processing...'), findsOneWidget);
       });
 
-      testWidgets('should handle import button tap', (WidgetTester tester) async {
+      testWidgets('should handle import button tap', (
+        WidgetTester tester,
+      ) async {
         await tester.pumpWidget(createTestWidget(showImportOption: true));
 
         expect(find.text('Import from Gallery'), findsOneWidget);
@@ -198,21 +251,27 @@ void main() {
     });
 
     group('Layout and Structure', () {
-      testWidgets('should have proper app bar structure', (WidgetTester tester) async {
+      testWidgets('should have proper app bar structure', (
+        WidgetTester tester,
+      ) async {
         await tester.pumpWidget(createTestWidget());
 
         expect(find.byType(AppBar), findsOneWidget);
         expect(find.text('Scan Document'), findsOneWidget);
       });
 
-      testWidgets('should have proper card structure for options', (WidgetTester tester) async {
+      testWidgets('should have proper card structure for options', (
+        WidgetTester tester,
+      ) async {
         await tester.pumpWidget(createTestWidget());
 
         expect(find.byType(Card), findsWidgets);
         expect(find.text('Document Scanner'), findsOneWidget);
       });
 
-      testWidgets('should have proper button layout', (WidgetTester tester) async {
+      testWidgets('should have proper button layout', (
+        WidgetTester tester,
+      ) async {
         await tester.pumpWidget(createTestWidget());
 
         expect(find.byType(Card), findsWidgets);

@@ -71,7 +71,7 @@ class _PdfPreviewWidgetState extends State<PdfPreviewWidget> {
           _pdfLoading = false;
         });
       }
-      
+
       if (document == null) {
         throw Exception('No PDF data provided');
       }
@@ -100,9 +100,7 @@ class _PdfPreviewWidgetState extends State<PdfPreviewWidget> {
               onPressed: widget.onConfirm,
               icon: const Icon(Icons.check),
               label: const Text('Save'),
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.white,
-              ),
+              style: TextButton.styleFrom(foregroundColor: Colors.white),
             ),
         ],
       ),
@@ -127,10 +125,11 @@ class _PdfPreviewWidgetState extends State<PdfPreviewWidget> {
                     Expanded(
                       child: Text(
                         'PDF Preview',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: Theme.of(context).primaryColor,
-                        ),
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).primaryColor,
+                            ),
                       ),
                     ),
                   ],
@@ -145,12 +144,10 @@ class _PdfPreviewWidgetState extends State<PdfPreviewWidget> {
               ],
             ),
           ),
-          
+
           // PDF content or loading/error state
-          Expanded(
-            child: _buildPdfContent(),
-          ),
-          
+          Expanded(child: _buildPdfContent()),
+
           // Bottom action bar
           if (!widget.isLoading)
             Container(
@@ -177,7 +174,7 @@ class _PdfPreviewWidgetState extends State<PdfPreviewWidget> {
                       foregroundColor: Colors.red,
                     ),
                   ),
-                  
+
                   // Confirm button
                   ElevatedButton.icon(
                     onPressed: widget.isLoading ? null : widget.onConfirm,
@@ -187,11 +184,15 @@ class _PdfPreviewWidgetState extends State<PdfPreviewWidget> {
                             height: 16,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.white,
+                              ),
                             ),
                           )
                         : const Icon(Icons.check),
-                    label: Text(widget.isLoading ? 'Saving...' : 'Save Document'),
+                    label: Text(
+                      widget.isLoading ? 'Saving...' : 'Save Document',
+                    ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green,
                       foregroundColor: Colors.white,
@@ -228,14 +229,14 @@ class _PdfPreviewWidgetState extends State<PdfPreviewWidget> {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return _buildLoadingState();
         }
-        
+
         if (snapshot.hasError) {
           setState(() {
             _error = 'Error: ${snapshot.error}';
           });
           return _buildErrorState();
         }
-        
+
         if (!snapshot.hasData) {
           return _buildNoDataState();
         }
@@ -281,7 +282,7 @@ class _PdfPreviewWidgetState extends State<PdfPreviewWidget> {
 
   Widget _buildErrorState() {
     final hasFallback = widget.fallbackImage != null;
-    
+
     return SingleChildScrollView(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.start,
@@ -320,10 +321,11 @@ class _PdfPreviewWidgetState extends State<PdfPreviewWidget> {
                             Expanded(
                               child: Text(
                                 'PDF Rendering Unavailable',
-                                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                                  color: Colors.orange.shade700,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                                style: Theme.of(context).textTheme.labelLarge
+                                    ?.copyWith(
+                                      color: Colors.orange.shade700,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                               ),
                             ),
                           ],
@@ -332,18 +334,18 @@ class _PdfPreviewWidgetState extends State<PdfPreviewWidget> {
                         Text(
                           _error ?? 'Failed to render PDF preview',
                           textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Colors.orange.shade600,
-                          ),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: Colors.orange.shade600),
                         ),
                         const SizedBox(height: 8),
                         Text(
                           'Showing processed image instead',
                           textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Colors.orange.shade600,
-                            fontStyle: FontStyle.italic,
-                          ),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Colors.orange.shade600,
+                                fontStyle: FontStyle.italic,
+                              ),
                         ),
                       ],
                     ),
@@ -384,7 +386,9 @@ class _PdfPreviewWidgetState extends State<PdfPreviewWidget> {
                       setState(() {
                         _error = null;
                         _documentFuture = _loadPdf();
-                        _pdfController = PdfController(document: _documentFuture);
+                        _pdfController = PdfController(
+                          document: _documentFuture,
+                        );
                       });
                     },
                     icon: const Icon(Icons.refresh),
@@ -407,17 +411,13 @@ class _PdfPreviewWidgetState extends State<PdfPreviewWidget> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.picture_as_pdf,
-            size: 64,
-            color: Colors.grey.shade400,
-          ),
+          Icon(Icons.picture_as_pdf, size: 64, color: Colors.grey.shade400),
           const SizedBox(height: 16),
           Text(
             'No PDF Data Available',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              color: Colors.grey.shade600,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(color: Colors.grey.shade600),
           ),
           const SizedBox(height: 8),
           Padding(
@@ -425,9 +425,9 @@ class _PdfPreviewWidgetState extends State<PdfPreviewWidget> {
             child: Text(
               'No PDF data or file path provided for preview.',
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Colors.grey.shade600,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: Colors.grey.shade600),
             ),
           ),
         ],

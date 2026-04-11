@@ -24,11 +24,11 @@ class DocumentScannerService {
     PdfGenerator? pdfGenerator,
     QRScannerService? qrScanner,
     ImageProcessor? imageProcessor,
-  })  : _cameraService = cameraService ?? CameraService(),
-        _storageHelper = storageHelper ?? StorageHelper(),
-        _pdfGenerator = pdfGenerator ?? PdfGenerator(),
-        _qrScanner = qrScanner ?? QRScannerService(),
-        _imageProcessor = imageProcessor ?? ImageProcessor();
+  }) : _cameraService = cameraService ?? CameraService(),
+       _storageHelper = storageHelper ?? StorageHelper(),
+       _pdfGenerator = pdfGenerator ?? PdfGenerator(),
+       _qrScanner = qrScanner ?? QRScannerService(),
+       _imageProcessor = imageProcessor ?? ImageProcessor();
 
   static final DocumentScannerService _instance =
       DocumentScannerService._internal();
@@ -40,12 +40,12 @@ class DocumentScannerService {
     required QRScannerService qrScanner,
     required ImageProcessor imageProcessor,
   }) : this._internal(
-          cameraService: cameraService,
-          storageHelper: storageHelper,
-          pdfGenerator: pdfGenerator,
-          qrScanner: qrScanner,
-          imageProcessor: imageProcessor,
-        );
+         cameraService: cameraService,
+         storageHelper: storageHelper,
+         pdfGenerator: pdfGenerator,
+         qrScanner: qrScanner,
+         imageProcessor: imageProcessor,
+       );
 
   final CameraService _cameraService;
   final StorageHelper _storageHelper;
@@ -64,10 +64,9 @@ class DocumentScannerService {
     String? appName,
     String? pdfBrandingText,
   }) {
-    _storageHelper.configure(StorageConfig(
-      customDirectory: customStorageDirectory,
-      appName: appName,
-    ));
+    _storageHelper.configure(
+      StorageConfig(customDirectory: customStorageDirectory, appName: appName),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -83,28 +82,26 @@ class DocumentScannerService {
     DocumentProcessingOptions? processingOptions,
     String? customFilename,
     bool autoProcess = false,
-  }) =>
-      _captureAndProcess(
-        source: _CaptureSource.camera,
-        documentType: documentType,
-        processingOptions: processingOptions,
-        customFilename: customFilename,
-        autoProcess: autoProcess,
-      );
+  }) => _captureAndProcess(
+    source: _CaptureSource.camera,
+    documentType: documentType,
+    processingOptions: processingOptions,
+    customFilename: customFilename,
+    autoProcess: autoProcess,
+  );
 
   /// Import a document from the gallery.
   Future<ScanResult> importDocument({
     required DocumentType documentType,
     DocumentProcessingOptions? processingOptions,
     String? customFilename,
-  }) =>
-      _captureAndProcess(
-        source: _CaptureSource.gallery,
-        documentType: documentType,
-        processingOptions: processingOptions,
-        customFilename: customFilename,
-        autoProcess: false,
-      );
+  }) => _captureAndProcess(
+    source: _CaptureSource.gallery,
+    documentType: documentType,
+    processingOptions: processingOptions,
+    customFilename: customFilename,
+    autoProcess: false,
+  );
 
   /// Scan with automatic processing and file saving (bypasses image editor).
   /// Returns [ScannedDocument] with populated [pdfPath] and [processedPath].
@@ -112,14 +109,13 @@ class DocumentScannerService {
     required DocumentType documentType,
     DocumentProcessingOptions? processingOptions,
     String? customFilename,
-  }) =>
-      _captureAndProcess(
-        source: _CaptureSource.camera,
-        documentType: documentType,
-        processingOptions: processingOptions,
-        customFilename: customFilename,
-        autoProcess: true,
-      );
+  }) => _captureAndProcess(
+    source: _CaptureSource.camera,
+    documentType: documentType,
+    processingOptions: processingOptions,
+    customFilename: customFilename,
+    autoProcess: true,
+  );
 
   /// Import with automatic processing and file saving (bypasses image editor).
   /// Returns [ScannedDocument] with populated [pdfPath] and [processedPath].
@@ -127,14 +123,13 @@ class DocumentScannerService {
     required DocumentType documentType,
     DocumentProcessingOptions? processingOptions,
     String? customFilename,
-  }) =>
-      _captureAndProcess(
-        source: _CaptureSource.gallery,
-        documentType: documentType,
-        processingOptions: processingOptions,
-        customFilename: customFilename,
-        autoProcess: true,
-      );
+  }) => _captureAndProcess(
+    source: _CaptureSource.gallery,
+    documentType: documentType,
+    processingOptions: processingOptions,
+    customFilename: customFilename,
+    autoProcess: true,
+  );
 
   // ---------------------------------------------------------------------------
   // QR code
@@ -145,23 +140,31 @@ class DocumentScannerService {
     try {
       final hasPermission = await _cameraService.requestCameraPermission();
       if (!hasPermission) {
-        return QRScanResult.error(error: 'Camera permission denied', qrData: '');
+        return QRScanResult.error(
+          error: 'Camera permission denied',
+          qrData: '',
+        );
       }
       return await _qrScanner.scanQRCode();
     } catch (e) {
-      return QRScanResult.error(error: 'Failed to scan QR code: $e', qrData: '');
+      return QRScanResult.error(
+        error: 'Failed to scan QR code: $e',
+        qrData: '',
+      );
     }
   }
 
   /// Scan a QR code and download the document if a URL is detected.
   Future<ScanResult> scanQRCodeAndDownload({String? customFilename}) async {
     try {
-      final hasCameraPermission = await _cameraService.requestCameraPermission();
+      final hasCameraPermission = await _cameraService
+          .requestCameraPermission();
       if (!hasCameraPermission) {
         return ScanResult.error(error: 'Camera permission denied');
       }
 
-      final hasStoragePermission = await _cameraService.requestStoragePermission();
+      final hasStoragePermission = await _cameraService
+          .requestStoragePermission();
       if (!hasStoragePermission) {
         return ScanResult.error(error: 'Storage permission denied');
       }
@@ -180,7 +183,8 @@ class DocumentScannerService {
       }
 
       return ScanResult.error(
-        error: 'QR code does not contain a downloadable document link.\n'
+        error:
+            'QR code does not contain a downloadable document link.\n'
             'Content: ${qrResult.qrData}\nType: ${qrResult.contentType}',
         metadata: {
           'qrData': qrResult.qrData,
@@ -198,7 +202,8 @@ class DocumentScannerService {
     String? customFilename,
   }) async {
     try {
-      final hasStoragePermission = await _cameraService.requestStoragePermission();
+      final hasStoragePermission = await _cameraService
+          .requestStoragePermission();
       if (!hasStoragePermission) {
         return ScanResult.error(error: 'Storage permission denied');
       }
@@ -208,8 +213,14 @@ class DocumentScannerService {
         return ScanResult.error(error: 'Failed to download manual from URL');
       }
 
-      final savedDocument = await _saveToExternalStorage(document, customFilename);
-      return ScanResult.success(document: savedDocument, type: ScanResultType.download);
+      final savedDocument = await _saveToExternalStorage(
+        document,
+        customFilename,
+      );
+      return ScanResult.success(
+        document: savedDocument,
+        type: ScanResultType.download,
+      );
     } catch (e) {
       return ScanResult.error(error: 'Failed to download manual: $e');
     }
@@ -251,7 +262,10 @@ class DocumentScannerService {
         },
       );
 
-      final savedDocument = await _saveToExternalStorage(updatedDocument, customFilename);
+      final savedDocument = await _saveToExternalStorage(
+        updatedDocument,
+        customFilename,
+      );
       return ScanResult.success(document: savedDocument);
     } catch (e) {
       return ScanResult.error(error: 'Failed to finalize scan result: $e');
@@ -270,7 +284,8 @@ class DocumentScannerService {
         return ScanResult.error(error: 'No pages to finalize');
       }
 
-      final hasStoragePermission = await _cameraService.requestStoragePermission();
+      final hasStoragePermission = await _cameraService
+          .requestStoragePermission();
       if (!hasStoragePermission) {
         return ScanResult.error(error: 'Storage permission denied');
       }
@@ -315,7 +330,9 @@ class DocumentScannerService {
       );
       return ScanResult.success(document: savedDocument);
     } catch (e) {
-      return ScanResult.error(error: 'Failed to finalize multi-page session: $e');
+      return ScanResult.error(
+        error: 'Failed to finalize multi-page session: $e',
+      );
     }
   }
 
@@ -358,7 +375,10 @@ class DocumentScannerService {
       );
 
       if (editResult == null) {
-        return ScanResult.error(error: 'Editing cancelled', type: ScanResultType.scan);
+        return ScanResult.error(
+          error: 'Editing cancelled',
+          type: ScanResultType.scan,
+        );
       }
 
       final editedImageData = editResult['imageData'] as Uint8List;
@@ -368,7 +388,8 @@ class DocumentScannerService {
       final updatedProcessingOptions = DocumentProcessingOptions(
         convertToGrayscale: processingOptions?.convertToGrayscale ?? true,
         enhanceContrast: processingOptions?.enhanceContrast ?? true,
-        autoCorrectPerspective: processingOptions?.autoCorrectPerspective ?? true,
+        autoCorrectPerspective:
+            processingOptions?.autoCorrectPerspective ?? true,
         compressionQuality: processingOptions?.compressionQuality ?? 0.8,
         outputFormat: processingOptions?.outputFormat ?? ImageFormat.jpeg,
         generatePdf: processingOptions?.generatePdf ?? true,
@@ -400,14 +421,20 @@ class DocumentScannerService {
         },
       );
 
-      final finalResult = await finalizeScanResult(editedDocument, customFilename);
+      final finalResult = await finalizeScanResult(
+        editedDocument,
+        customFilename,
+      );
 
       if (finalResult.success && finalResult.document?.pdfData != null) {
         await _showPdfPreview(context, finalResult.document!);
       }
       return finalResult;
     } catch (e) {
-      return ScanResult.error(error: 'Error during image editing: $e', type: ScanResultType.scan);
+      return ScanResult.error(
+        error: 'Error during image editing: $e',
+        type: ScanResultType.scan,
+      );
     }
   }
 
@@ -456,12 +483,12 @@ class DocumentScannerService {
 
       if (options.autoCorrectPerspective) {
         try {
-          final processingResult = await _imageProcessor.processImageWithAutoCrop(
-            captureResult.imageData!,
-            options,
-          );
-          processedImageData = processingResult['processedImageData'] as Uint8List;
-          autoCropMetadata = processingResult['metadata'] as Map<String, dynamic>;
+          final processingResult = await _imageProcessor
+              .processImageWithAutoCrop(captureResult.imageData!, options);
+          processedImageData =
+              processingResult['processedImageData'] as Uint8List;
+          autoCropMetadata =
+              processingResult['metadata'] as Map<String, dynamic>;
         } catch (_) {
           // Auto-crop failure is non-fatal; continue with original image
         }
@@ -508,9 +535,11 @@ class DocumentScannerService {
         processingOptions,
       );
 
-      final processedImageData = processingResult['processedImageData'] as Uint8List;
+      final processedImageData =
+          processingResult['processedImageData'] as Uint8List;
       final detectedEdges = processingResult['detectedEdges'] as List<Offset>;
-      final autoCropMetadata = processingResult['metadata'] as Map<String, dynamic>;
+      final autoCropMetadata =
+          processingResult['metadata'] as Map<String, dynamic>;
 
       Uint8List? pdfData;
       if (processingOptions.generatePdf) {
@@ -559,7 +588,10 @@ class DocumentScannerService {
         metadata: metadata,
       );
 
-      final savedDocument = await _saveToExternalStorage(document, customFilename);
+      final savedDocument = await _saveToExternalStorage(
+        document,
+        customFilename,
+      );
       return ScanResult.success(document: savedDocument);
     } catch (e) {
       return ScanResult.error(error: 'Failed to process and save document: $e');

@@ -244,7 +244,11 @@ class ImageProcessingIsolateService {
     }
 
     image = _applyResolution(image, options.pdfResolution);
-    return _encodeImage(image, options.outputFormat, options.compressionQuality);
+    return _encodeImage(
+      image,
+      options.outputFormat,
+      options.compressionQuality,
+    );
   }
 
   Future<List<Offset>> _detectDocumentEdges(Uint8List imageData) async {
@@ -277,9 +281,7 @@ class ImageProcessingIsolateService {
 
       if (downscaleRatio < 1.0) {
         final scale = 1.0 / downscaleRatio;
-        return corners
-            .map((c) => Offset(c.dx * scale, c.dy * scale))
-            .toList();
+        return corners.map((c) => Offset(c.dx * scale, c.dy * scale)).toList();
       }
 
       return _orderCorners(corners);
@@ -375,9 +377,7 @@ class ImageProcessingIsolateService {
       }
     }
 
-    return [
-      for (int i = 0; i < 4; i++) sorted[(topLeftIndex + i) % 4],
-    ];
+    return [for (int i = 0; i < 4; i++) sorted[(topLeftIndex + i) % 4]];
   }
 
   Future<img.Image> _applyBoundingBoxCrop(
@@ -433,11 +433,7 @@ class ImageProcessingIsolateService {
     );
   }
 
-  Uint8List _encodeImage(
-    img.Image image,
-    ImageFormat format,
-    double quality,
-  ) {
+  Uint8List _encodeImage(img.Image image, ImageFormat format, double quality) {
     switch (format) {
       case ImageFormat.jpeg:
       case ImageFormat.webp: // WebP not reliably available; fall back to JPEG

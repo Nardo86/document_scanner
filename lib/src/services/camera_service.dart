@@ -37,17 +37,11 @@ class CaptureResult {
   }
 
   factory CaptureResult.error(String error) {
-    return CaptureResult(
-      success: false,
-      error: error,
-    );
+    return CaptureResult(success: false, error: error);
   }
 
   factory CaptureResult.cancelled() {
-    return const CaptureResult(
-      success: false,
-      cancelled: true,
-    );
+    return const CaptureResult(success: false, cancelled: true);
   }
 }
 
@@ -90,7 +84,7 @@ class CameraService {
   final ImagePicker _imagePicker;
 
   CameraService({ImagePicker? imagePicker})
-      : _imagePicker = imagePicker ?? ImagePicker();
+    : _imagePicker = imagePicker ?? ImagePicker();
 
   /// Check if camera permission is granted
   Future<bool> hasCameraPermission() async {

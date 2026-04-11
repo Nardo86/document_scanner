@@ -35,7 +35,7 @@ class DocumentScannerWidget extends StatefulWidget {
 
 class _DocumentScannerWidgetState extends State<DocumentScannerWidget> {
   final DocumentScannerService _scannerService = DocumentScannerService();
-  
+
   bool _isScanning = false;
   String? _currentError;
 
@@ -50,9 +50,8 @@ class _DocumentScannerWidgetState extends State<DocumentScannerWidget> {
       body: Column(
         children: [
           // Custom header if provided
-          if (widget.customHeader != null)
-            widget.customHeader!,
-          
+          if (widget.customHeader != null) widget.customHeader!,
+
           // Main content
           Expanded(
             child: Padding(
@@ -62,31 +61,28 @@ class _DocumentScannerWidgetState extends State<DocumentScannerWidget> {
                 children: [
                   // Document type info
                   _buildDocumentTypeInfo(),
-                  
+
                   const SizedBox(height: 24),
-                  
+
                   // Scan options
                   _buildScanOptions(),
-                  
+
                   const SizedBox(height: 16),
-                  
+
                   // Error display
-                  if (_currentError != null)
-                    _buildErrorDisplay(),
-                  
+                  if (_currentError != null) _buildErrorDisplay(),
+
                   const Spacer(),
-                  
+
                   // Processing indicator
-                  if (_isScanning)
-                    _buildProcessingIndicator(),
+                  if (_isScanning) _buildProcessingIndicator(),
                 ],
               ),
             ),
           ),
-          
+
           // Custom footer if provided
-          if (widget.customFooter != null)
-            widget.customFooter!,
+          if (widget.customFooter != null) widget.customFooter!,
         ],
       ),
     );
@@ -137,9 +133,9 @@ class _DocumentScannerWidgetState extends State<DocumentScannerWidget> {
           description: 'Take a photo of the ${_getDocumentTypeName()}',
           onTap: _scanWithCamera,
         ),
-        
+
         const SizedBox(height: 12),
-        
+
         // Import from gallery option
         if (widget.showImportOption)
           _buildOptionCard(
@@ -148,9 +144,9 @@ class _DocumentScannerWidgetState extends State<DocumentScannerWidget> {
             description: 'Select an existing photo',
             onTap: _importFromGallery,
           ),
-        
+
         const SizedBox(height: 12),
-        
+
         // QR code scan option (for manuals)
         // QR option removed - use QRScannerService.scanQRCodeWithUI() directly from your app
       ],
@@ -175,7 +171,9 @@ class _DocumentScannerWidgetState extends State<DocumentScannerWidget> {
               Icon(
                 icon,
                 size: 32,
-                color: _isScanning ? Colors.grey : Theme.of(context).primaryColor,
+                color: _isScanning
+                    ? Colors.grey
+                    : Theme.of(context).primaryColor,
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -219,10 +217,7 @@ class _DocumentScannerWidgetState extends State<DocumentScannerWidget> {
         padding: const EdgeInsets.all(16.0),
         child: Row(
           children: [
-            Icon(
-              Icons.error_outline,
-              color: Colors.red.shade700,
-            ),
+            Icon(Icons.error_outline, color: Colors.red.shade700),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -245,10 +240,7 @@ class _DocumentScannerWidgetState extends State<DocumentScannerWidget> {
             ),
             IconButton(
               onPressed: () => setState(() => _currentError = null),
-              icon: Icon(
-                Icons.close,
-                color: Colors.red.shade700,
-              ),
+              icon: Icon(Icons.close, color: Colors.red.shade700),
             ),
           ],
         ),
@@ -363,11 +355,11 @@ class _DocumentScannerWidgetState extends State<DocumentScannerWidget> {
       customFilename: widget.customFilename,
       processingOptions: widget.processingOptions,
     );
-    
+
     // Call the completion callback with the final result
     widget.onScanComplete(result);
   }
-  
+
   /// Handle error
   void _handleError(String error) {
     setState(() => _currentError = error);

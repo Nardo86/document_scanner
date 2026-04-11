@@ -78,7 +78,8 @@ class StorageHelper {
       final model = metadata['productModel'] as String?;
       if (brand != null && model != null) {
         final dateStr =
-            (metadata['purchaseDate'] as String?) ?? _formatTimestamp(timestamp);
+            (metadata['purchaseDate'] as String?) ??
+            _formatTimestamp(timestamp);
         final typeStr = _typeSuffix(documentType);
         return '${dateStr}_${_clean(brand)}_${_clean(model)}_$typeStr';
       }

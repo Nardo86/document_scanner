@@ -46,8 +46,8 @@ class ImageProcessor {
   final Map<String, List<Offset>> _edgeCache = {};
 
   ImageProcessor()
-      : _isolateService = ImageProcessingIsolateService(),
-        _autoCropper = AutoCropper();
+    : _isolateService = ImageProcessingIsolateService(),
+      _autoCropper = AutoCropper();
 
   // -------------------------------------------------------------------------
   // Public API
@@ -418,8 +418,9 @@ class ImageProcessor {
     final cdfMin = cdf.firstWhere((v) => v > 0);
     final lookup = List<int>.filled(256, 0);
     for (int i = 0; i < 256; i++) {
-      lookup[i] =
-          (((cdf[i] - cdfMin) / (totalPixels - cdfMin)) * 255).round().clamp(0, 255);
+      lookup[i] = (((cdf[i] - cdfMin) / (totalPixels - cdfMin)) * 255)
+          .round()
+          .clamp(0, 255);
     }
     return lookup;
   }
@@ -433,12 +434,14 @@ class ImageProcessor {
     List<Offset> corners, {
     DocumentFormat format = DocumentFormat.auto,
   }) async {
-    final ui.Codec codec =
-        await ui.instantiateImageCodec(img.encodeJpg(image));
+    final ui.Codec codec = await ui.instantiateImageCodec(img.encodeJpg(image));
     final ui.FrameInfo frame = await codec.getNextFrame();
     final ui.Image uiImage = frame.image;
 
-    final outputDimensions = _calculateOutputDimensions(corners, format: format);
+    final outputDimensions = _calculateOutputDimensions(
+      corners,
+      format: format,
+    );
 
     final transformedImage = await _applyPerspectiveTransformation(
       uiImage,
@@ -457,8 +460,9 @@ class ImageProcessor {
       outputDimensions.height.toInt(),
     );
 
-    final ByteData? byteData =
-        await resultImage.toByteData(format: ui.ImageByteFormat.rawRgba);
+    final ByteData? byteData = await resultImage.toByteData(
+      format: ui.ImageByteFormat.rawRgba,
+    );
     if (byteData == null) {
       throw ImageProcessingException('Failed to convert transformed image');
     }
@@ -478,8 +482,9 @@ class ImageProcessor {
     int outputWidth,
     int outputHeight,
   ) async {
-    final ByteData? sourceData =
-        await sourceImage.toByteData(format: ui.ImageByteFormat.rawRgba);
+    final ByteData? sourceData = await sourceImage.toByteData(
+      format: ui.ImageByteFormat.rawRgba,
+    );
     if (sourceData == null) throw Exception('Failed to get source image data');
 
     final sourcePixels = sourceData.buffer.asUint8List();
@@ -499,10 +504,7 @@ class ImageProcessor {
 
     for (int y = 0; y < outputHeight; y++) {
       for (int x = 0; x < outputWidth; x++) {
-        final sp = _transformPoint(
-          Offset(x.toDouble(), y.toDouble()),
-          matrix,
-        );
+        final sp = _transformPoint(Offset(x.toDouble(), y.toDouble()), matrix);
 
         final oi = (y * outputWidth + x) * 4;
         if (sp.dx >= 0 && sp.dx < srcW && sp.dy >= 0 && sp.dy < srcH) {
@@ -562,8 +564,14 @@ class ImageProcessor {
     ];
 
     final b = <double>[
-      d[0].dx, d[0].dy, d[1].dx, d[1].dy,
-      d[2].dx, d[2].dy, d[3].dx, d[3].dy,
+      d[0].dx,
+      d[0].dy,
+      d[1].dx,
+      d[1].dy,
+      d[2].dx,
+      d[2].dy,
+      d[3].dx,
+      d[3].dy,
     ];
 
     final h = _solveLinearSystem(A, b);
@@ -800,7 +808,11 @@ class ImageProcessor {
     if (options.enhanceContrast) {
       image = img.adjustColor(image, contrast: _contrastMultiplier);
     }
-    return _encodeImage(image, options.outputFormat, options.compressionQuality);
+    return _encodeImage(
+      image,
+      options.outputFormat,
+      options.compressionQuality,
+    );
   }
 
   Uint8List _encodeImage(img.Image image, ImageFormat format, double quality) {
@@ -818,7 +830,12 @@ class ImageProcessor {
   List<Offset> _getFallbackCorners(Uint8List imageData) {
     final image = img.decodeImage(imageData);
     if (image == null) {
-      return const [Offset(0, 0), Offset(100, 0), Offset(100, 100), Offset(0, 100)];
+      return const [
+        Offset(0, 0),
+        Offset(100, 0),
+        Offset(100, 100),
+        Offset(0, 100),
+      ];
     }
     final w = image.width.toDouble();
     final h = image.height.toDouble();

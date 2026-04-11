@@ -18,4 +18,3 @@ export 'src/ui/document_scanner_widget.dart';
 export 'src/ui/multi_page_scanner_widget.dart';
 export 'src/ui/image_editing_widget.dart';
 export 'src/ui/pdf_preview_widget.dart';
-

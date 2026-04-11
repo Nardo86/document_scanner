@@ -34,7 +34,7 @@ class MultiPageScannerWidget extends StatefulWidget {
 class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
   final DocumentScannerService _scannerService = DocumentScannerService();
   final PdfGenerator _pdfGenerator = PdfGenerator();
-  
+
   MultiPageScanSession? _currentSession;
   bool _isProcessing = false;
   String? _currentError;
@@ -60,20 +60,19 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
       body: Column(
         children: [
           // Custom header
-          if (widget.customHeader != null)
-            widget.customHeader!,
-          
+          if (widget.customHeader != null) widget.customHeader!,
+
           // Page count indicator
           if (_currentSession != null && _currentSession!.pages.isNotEmpty)
             _buildPageCountIndicator(),
-          
+
           // Main content
           Expanded(
             child: _currentSession == null || _currentSession!.pages.isEmpty
                 ? _buildInitialScanView()
                 : _buildPageManagementView(),
           ),
-          
+
           // Bottom action bar
           if (_currentSession != null && _currentSession!.pages.isNotEmpty)
             _buildBottomActionBar(),
@@ -134,7 +133,7 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 32),
-          
+
           // Scan first page button
           ElevatedButton.icon(
             onPressed: _isProcessing ? null : _scanFirstPage,
@@ -146,9 +145,9 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             ),
           ),
-          
+
           const SizedBox(height: 16),
-          
+
           // Processing indicator
           if (_isProcessing)
             const Column(
@@ -158,10 +157,9 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
                 Text('Processing page...'),
               ],
             ),
-          
+
           // Error display
-          if (_currentError != null)
-            _buildErrorCard(),
+          if (_currentError != null) _buildErrorCard(),
         ],
       ),
     );
@@ -177,13 +175,10 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
               ? _buildPagePreview()
               : _buildPageThumbnailGrid(),
         ),
-        
+
         // Error display
         if (_currentError != null)
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: _buildErrorCard(),
-          ),
+          Padding(padding: const EdgeInsets.all(16), child: _buildErrorCard()),
       ],
     );
   }
@@ -191,7 +186,7 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
   /// Build page thumbnail grid
   Widget _buildPageThumbnailGrid() {
     final pages = _currentSession!.pages;
-    
+
     return Padding(
       padding: const EdgeInsets.all(16),
       child: GridView.builder(
@@ -235,7 +230,7 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
               textAlign: TextAlign.center,
             ),
           ),
-          
+
           // Page image
           Expanded(
             child: GestureDetector(
@@ -248,21 +243,14 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: page.processedImageData != null
-                    ? Image.memory(
-                        page.processedImageData!,
-                        fit: BoxFit.cover,
-                      )
+                    ? Image.memory(page.processedImageData!, fit: BoxFit.cover)
                     : const Center(
-                        child: Icon(
-                          Icons.image,
-                          size: 40,
-                          color: Colors.grey,
-                        ),
+                        child: Icon(Icons.image, size: 40, color: Colors.grey),
                       ),
               ),
             ),
           ),
-          
+
           // Page actions
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -288,7 +276,7 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
   /// Build page preview (fullscreen)
   Widget _buildPagePreview() {
     final page = _currentSession!.pages[_selectedPageIndex];
-    
+
     return Column(
       children: [
         // Preview header
@@ -309,7 +297,7 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
             ],
           ),
         ),
-        
+
         // Preview image
         Expanded(
           child: Container(
@@ -322,15 +310,11 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
                         fit: BoxFit.contain,
                       ),
                     )
-                  : const Icon(
-                      Icons.image,
-                      size: 80,
-                      color: Colors.white,
-                    ),
+                  : const Icon(Icons.image, size: 80, color: Colors.white),
             ),
           ),
         ),
-        
+
         // Preview navigation
         Container(
           padding: const EdgeInsets.all(16),
@@ -349,7 +333,8 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
                 icon: const Icon(Icons.delete, color: Colors.red),
               ),
               IconButton(
-                onPressed: _selectedPageIndex < _currentSession!.pages.length - 1
+                onPressed:
+                    _selectedPageIndex < _currentSession!.pages.length - 1
                     ? () => setState(() => _selectedPageIndex++)
                     : null,
                 icon: const Icon(Icons.arrow_forward, color: Colors.white),
@@ -388,14 +373,14 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
               foregroundColor: Colors.white,
             ),
           ),
-          
+
           // Reorder button
           OutlinedButton.icon(
             onPressed: _isProcessing ? null : _reorderPages,
             icon: const Icon(Icons.reorder),
             label: const Text('Reorder'),
           ),
-          
+
           // Finalize button
           ElevatedButton.icon(
             onPressed: _isProcessing ? null : _finalizeDocument,
@@ -453,7 +438,7 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
 
       if (result.success && result.document != null) {
         final document = result.document!;
-        
+
         // Show image editor for first page
         await _showImageEditorForPage(document, 1, isFirstPage: true);
       } else {
@@ -482,7 +467,7 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
       if (result.success && result.document != null) {
         final document = result.document!;
         final pageNumber = _currentSession!.pages.length + 1;
-        
+
         // Show image editor for new page
         await _showImageEditorForPage(document, pageNumber, isFirstPage: false);
       } else {
@@ -497,16 +482,17 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
 
   /// Delete a page
   void _deletePage(int index) {
-    if (_currentSession == null || index >= _currentSession!.pages.length) return;
+    if (_currentSession == null || index >= _currentSession!.pages.length)
+      return;
 
     final page = _currentSession!.pages[index];
     _currentSession = _currentSession!.removePage(page.id);
-    
+
     // Adjust selected page index if needed
     if (_selectedPageIndex >= _currentSession!.pages.length) {
       _selectedPageIndex = _currentSession!.pages.length - 1;
     }
-    
+
     setState(() {});
   }
 
@@ -535,7 +521,8 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
 
   /// Finalize document (combine all pages into PDF)
   Future<void> _finalizeDocument() async {
-    if (_currentSession == null || !_currentSession!.isReadyForFinalization) return;
+    if (_currentSession == null || !_currentSession!.isReadyForFinalization)
+      return;
 
     setState(() {
       _isProcessing = true;
@@ -551,7 +538,8 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
       final pdfData = await _pdfGenerator.generateMultiPagePdf(
         imageDataList: imageDataList,
         documentType: widget.documentType,
-        resolution: widget.processingOptions?.pdfResolution ?? PdfResolution.quality,
+        resolution:
+            widget.processingOptions?.pdfResolution ?? PdfResolution.quality,
         documentFormat: widget.processingOptions?.documentFormat,
         metadata: {
           'pageCount': _currentSession!.pages.length,
@@ -614,9 +602,9 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
   /// Show image editor for a page (both first page and additional pages)
   Future<void> _showImageEditorForPage(
     ScannedDocument document,
-    int pageNumber,
-    {required bool isFirstPage}
-  ) async {
+    int pageNumber, {
+    required bool isFirstPage,
+  }) async {
     if (document.rawImageData == null) {
       // No image data available, proceed with original document
       _addPageToSession(document, pageNumber, isFirstPage);
@@ -666,7 +654,11 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
   }
 
   /// Add page to session after editing
-  void _addPageToSession(ScannedDocument document, int pageNumber, bool isFirstPage) {
+  void _addPageToSession(
+    ScannedDocument document,
+    int pageNumber,
+    bool isFirstPage,
+  ) {
     if (isFirstPage) {
       // Create new session for first page
       _currentSession = MultiPageScanSession(
@@ -793,7 +785,9 @@ class _PageReorderDialogState extends State<_PageReorderDialog> {
               key: ValueKey(page.id),
               leading: Text('${index + 1}'),
               title: Text('Page ${index + 1}'),
-              subtitle: Text('Scanned: ${page.scanTime.toString().split('.')[0]}'),
+              subtitle: Text(
+                'Scanned: ${page.scanTime.toString().split('.')[0]}',
+              ),
               trailing: const Icon(Icons.drag_handle),
             );
           },
@@ -812,4 +806,3 @@ class _PageReorderDialogState extends State<_PageReorderDialog> {
     );
   }
 }
-

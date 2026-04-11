@@ -5,7 +5,12 @@ class SectionHeader extends StatelessWidget {
   final String title;
   final String subtitle;
 
-  const SectionHeader({super.key, required this.icon, required this.title, required this.subtitle});
+  const SectionHeader({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -20,13 +25,12 @@ class SectionHeader extends StatelessWidget {
             children: [
               Text(
                 title,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 4),
-              Text(
-                subtitle,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
+              Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
             ],
           ),
         ),

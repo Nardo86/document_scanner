@@ -17,8 +17,7 @@ class PdfPreviewShowcaseScreen extends StatefulWidget {
       _PdfPreviewShowcaseScreenState();
 }
 
-class _PdfPreviewShowcaseScreenState
-    extends State<PdfPreviewShowcaseScreen> {
+class _PdfPreviewShowcaseScreenState extends State<PdfPreviewShowcaseScreen> {
   String? _loadingDocumentId;
 
   @override
@@ -56,8 +55,7 @@ class _PdfPreviewShowcaseScreenState
     );
   }
 
-  Widget _buildDocumentCard(
-      BuildContext context, ScannedDocument doc) {
+  Widget _buildDocumentCard(BuildContext context, ScannedDocument doc) {
     final isLoading = _loadingDocumentId == doc.id;
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -81,10 +79,9 @@ class _PdfPreviewShowcaseScreenState
               const SizedBox(height: 8),
               SelectableText(
                 doc.pdfPath!,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(fontFamily: 'monospace'),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
               ),
             ],
             const SizedBox(height: 12),
@@ -92,17 +89,15 @@ class _PdfPreviewShowcaseScreenState
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed:
-                        isLoading ? null : () => _previewDocument(doc),
+                    onPressed: isLoading ? null : () => _previewDocument(doc),
                     icon: isLoading
                         ? const SizedBox(
                             width: 16,
                             height: 16,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2))
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
                         : const Icon(Icons.preview),
-                    label: Text(
-                        isLoading ? 'Loading…' : 'Preview PDF'),
+                    label: Text(isLoading ? 'Loading…' : 'Preview PDF'),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -125,9 +120,9 @@ class _PdfPreviewShowcaseScreenState
       await openPdfPreview(context, document);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to load PDF: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to load PDF: $e')));
       }
     } finally {
       if (mounted) setState(() => _loadingDocumentId = null);

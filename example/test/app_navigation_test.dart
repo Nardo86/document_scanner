@@ -21,28 +21,39 @@ void main() {
     expect(find.byType(NavigationBar), findsOneWidget);
 
     // Verify the first tab (Quick Scan) is selected by default
-    final navigationBar = tester.widget<NavigationBar>(find.byType(NavigationBar));
+    final navigationBar = tester.widget<NavigationBar>(
+      find.byType(NavigationBar),
+    );
     expect(navigationBar.selectedIndex, equals(0));
 
     // Verify the single page screen content is shown
     expect(find.text('Single Page Capture'), findsOneWidget);
     expect(find.text('First scan?'), findsOneWidget);
-    expect(find.text('Start quick with camera capture or gallery import. For longer documents, switch to the Multi Scan tab.'), findsOneWidget);
+    expect(
+      find.text(
+        'Start quick with camera capture or gallery import. For longer documents, switch to the Multi Scan tab.',
+      ),
+      findsOneWidget,
+    );
 
     // Test navigation to second tab
     await tester.tap(find.text('Multi Scan'));
     await tester.pumpAndSettle();
-    
+
     // Verify navigation bar updated
-    final navigationBarAfterTap = tester.widget<NavigationBar>(find.byType(NavigationBar));
+    final navigationBarAfterTap = tester.widget<NavigationBar>(
+      find.byType(NavigationBar),
+    );
     expect(navigationBarAfterTap.selectedIndex, equals(1));
 
     // Test navigation to third tab
     await tester.tap(find.text('Lab'));
     await tester.pumpAndSettle();
-    
+
     // Verify navigation bar updated
-    final navigationBarAfterSecondTap = tester.widget<NavigationBar>(find.byType(NavigationBar));
+    final navigationBarAfterSecondTap = tester.widget<NavigationBar>(
+      find.byType(NavigationBar),
+    );
     expect(navigationBarAfterSecondTap.selectedIndex, equals(2));
   });
 }
