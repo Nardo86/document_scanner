@@ -43,8 +43,6 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
   PdfResolution _selectedResolution =
       PdfResolution.size; // Default to Standard (150 DPI)
   bool _isSettingsExpanded = false; // Track if settings panel is expanded
-  int _rotationQuarterTurns =
-      0; // Track rotation in 90° increments (0, 1, 2, 3)
 
   @override
   void initState() {
@@ -153,36 +151,29 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
   }
 
   void _rotateClockwise() {
-    // Rotate by 90 degrees clockwise (1 quarter turn)
-    _rotationQuarterTurns = (_rotationQuarterTurns + 1) % 4;
-    _applyQuarterTurnRotation();
+    _applyStepRotation(90);
   }
 
   void _rotateCounterclockwise() {
-    // Rotate by 90 degrees counterclockwise (-1 quarter turn)
-    _rotationQuarterTurns = (_rotationQuarterTurns - 1) % 4;
-    if (_rotationQuarterTurns < 0) {
-      _rotationQuarterTurns += 4;
-    }
-    _applyQuarterTurnRotation();
+    _applyStepRotation(-90);
   }
 
-  Future<void> _applyQuarterTurnRotation() async {
+  /// Rotate the current base image by [degrees] (±90).
+  ///
+  /// Always operates on [_baseImageData] so that previous crop/rotation
+  /// is preserved. Slight JPEG re-encoding quality loss is acceptable
+  /// for document scanning use cases.
+  Future<void> _applyStepRotation(int degrees) async {
+    if (_baseImageData == null) return;
+
     setState(() {
       _isProcessing = true;
     });
 
     try {
-      // Convert quarter turns to degrees (0, 90, 180, or 270)
-      final rotationDegrees = _rotationQuarterTurns * 90;
-
-      // Apply rotation from the original image (not incrementally from preview)
-      // This prevents cumulative distortion
-      final rotationOptions = ImageEditingOptions(
-        rotationDegrees: rotationDegrees,
-      );
+      final rotationOptions = ImageEditingOptions(rotationDegrees: degrees);
       final rotatedData = await _imageProcessor.applyImageEditing(
-        widget.imageData,
+        _baseImageData!,
         rotationOptions,
       );
 
@@ -201,9 +192,6 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
       setState(() {
         _baseImageData = rotatedData;
         _previewImageData = previewData;
-        _editingOptions = _editingOptions.copyWith(
-          rotationDegrees: rotationDegrees,
-        );
         _isProcessing = false;
       });
     } catch (e) {
@@ -287,13 +275,13 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
     });
 
     try {
-      // Apply crop to original image using original-space coordinates
+      // Crop the current base image (corners match the displayed image)
       final cropOptions = ImageEditingOptions(
         cropCorners: _detectedCorners,
         documentFormat: _editingOptions.documentFormat,
       );
       final croppedData = await _imageProcessor.applyImageEditing(
-        widget.imageData,
+        _baseImageData!,
         cropOptions,
       );
 
@@ -331,10 +319,9 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
   void _resetEditing() {
     setState(() {
       _editingOptions = const ImageEditingOptions();
-      _previewImageData = widget.imageData;
-      _baseImageData = widget.imageData; // Reset base image to original
+      _previewImageData = widget.initialPreviewData ?? widget.imageData;
+      _baseImageData = widget.initialPreviewData ?? widget.imageData;
       _showCropOverlay = false;
-      _rotationQuarterTurns = 0; // Reset rotation to 0 quarter turns
     });
   }
 

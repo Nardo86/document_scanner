@@ -354,6 +354,12 @@ class DocumentScannerService {
       return ScanResult.error(error: 'No image data available for editing');
     }
 
+    final hasStoragePermission = await _cameraService
+        .requestStoragePermission();
+    if (!hasStoragePermission) {
+      return ScanResult.error(error: 'Storage permission denied');
+    }
+
     try {
       final editResult = await Navigator.push<Map<String, dynamic>?>(
         context,
