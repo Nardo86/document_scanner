@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:mockito/annotations.dart';
 import 'package:mockito/mockito.dart';
@@ -25,6 +27,20 @@ class TestCameraService extends CameraService {
   Future<bool> requestStoragePermission() async => storagePermissionGranted;
 }
 
+/// Creates a minimal valid JPEG in a temp file and returns the [XFile].
+/// The caller is responsible for deleting the file after use.
+XFile _createTempImageFile(String suffix) {
+  final image = img.Image(width: 10, height: 10);
+  img.fill(image, color: img.ColorRgb8(255, 0, 0));
+  final jpegBytes = Uint8List.fromList(img.encodeJpg(image, quality: 80));
+
+  final tmpFile = File(
+    '${Directory.systemTemp.path}/camera_service_test_$suffix.jpg',
+  );
+  tmpFile.writeAsBytesSync(jpegBytes);
+  return XFile(tmpFile.path);
+}
+
 void main() {
   late MockImagePicker mockImagePicker;
   late TestCameraService cameraService;
@@ -38,11 +54,7 @@ void main() {
     test(
       'returns success result with image data on successful capture',
       () async {
-        final mockImageData = Uint8List.fromList([1, 2, 3, 4]);
-        final mockXFile = XFile.fromData(
-          mockImageData,
-          path: '/test/image.jpg',
-        );
+        final mockXFile = _createTempImageFile('camera_success');
 
         when(
           mockImagePicker.pickImage(
@@ -55,8 +67,10 @@ void main() {
 
         expect(result.success, true);
         expect(result.imageData, isNotNull);
-        expect(result.path, '/test/image.jpg');
+        expect(result.path, mockXFile.path);
         expect(result.cancelled, false);
+
+        File(mockXFile.path).deleteSync();
       },
     );
 
@@ -88,11 +102,7 @@ void main() {
     test(
       'returns success result with image data on successful import',
       () async {
-        final mockImageData = Uint8List.fromList([1, 2, 3, 4]);
-        final mockXFile = XFile.fromData(
-          mockImageData,
-          path: '/test/gallery.jpg',
-        );
+        final mockXFile = _createTempImageFile('gallery_success');
 
         when(
           mockImagePicker.pickImage(
@@ -105,7 +115,9 @@ void main() {
 
         expect(result.success, true);
         expect(result.imageData, isNotNull);
-        expect(result.path, '/test/gallery.jpg');
+        expect(result.path, mockXFile.path);
+
+        File(mockXFile.path).deleteSync();
       },
     );
 
@@ -140,8 +152,7 @@ void main() {
 
   group('CameraService - custom image quality', () {
     test('uses custom image quality parameter', () async {
-      final mockImageData = Uint8List.fromList([1, 2, 3, 4]);
-      final mockXFile = XFile.fromData(mockImageData, path: '/test/image.jpg');
+      final mockXFile = _createTempImageFile('custom_quality');
 
       when(
         mockImagePicker.pickImage(source: ImageSource.camera, imageQuality: 80),
@@ -152,6 +163,8 @@ void main() {
       verify(
         mockImagePicker.pickImage(source: ImageSource.camera, imageQuality: 80),
       ).called(1);
+
+      File(mockXFile.path).deleteSync();
     });
   });
 }

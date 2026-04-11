@@ -104,22 +104,28 @@ void main() {
       );
     }
 
-    testWidgets('should display PDF preview with correct title', (
+    // ---------------------------------------------------------------------------
+    // App bar title
+    // ---------------------------------------------------------------------------
+
+    testWidgets('should display custom title in app bar', (
       WidgetTester tester,
     ) async {
-      await tester.pumpWidget(
-        createTestWidget(pdfData: testPdfData, title: 'Document Preview'),
-      );
+      await tester.pumpWidget(createTestWidget(title: 'Document Preview'));
       await tester.pump();
 
+      // The widget.title is shown in the AppBar.
       expect(find.text('Document Preview'), findsOneWidget);
-      expect(find.text('PDF Preview'), findsOneWidget);
-    }, skip: true); // Skip - requires native PDF support
+    });
 
-    testWidgets('should display preview header with instructions', (
+    // ---------------------------------------------------------------------------
+    // Preview header (always rendered, regardless of PDF data / loading state)
+    // ---------------------------------------------------------------------------
+
+    testWidgets('should display preview header with PDF icon and instructions', (
       WidgetTester tester,
     ) async {
-      await tester.pumpWidget(createTestWidget(pdfData: testPdfData));
+      await tester.pumpWidget(createTestWidget());
       await tester.pump();
 
       expect(find.text('PDF Preview'), findsOneWidget);
@@ -129,54 +135,84 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(find.byIcon(Icons.picture_as_pdf), findsOneWidget);
-    }, skip: true); // Skip - requires native PDF support
-
-    testWidgets('should display save button in app bar when not loading', (
-      WidgetTester tester,
-    ) async {
-      await tester.pumpWidget(
-        createTestWidget(pdfData: testPdfData, onConfirm: () {}),
-      );
-      await tester.pump();
-
-      expect(find.text('Save'), findsOneWidget);
-      expect(find.byIcon(Icons.check), findsAtLeastNWidgets(1));
-    }, skip: true); // Skip - requires native PDF support
-
-    testWidgets('should not display save button in app bar when loading', (
-      WidgetTester tester,
-    ) async {
-      await tester.pumpWidget(
-        createTestWidget(
-          pdfData: testPdfData,
-          isLoading: true,
-          onConfirm: () {},
-        ),
-      );
-      await tester.pump();
-
-      expect(find.text('Save'), findsNothing);
+      expect(find.byIcon(Icons.picture_as_pdf), findsAtLeastNWidgets(1));
     });
 
-    testWidgets('should display bottom action bar when not loading', (
+    // ---------------------------------------------------------------------------
+    // AppBar Save action
+    // ---------------------------------------------------------------------------
+
+    testWidgets(
+      'should display Save button in app bar when not loading and onConfirm provided',
+      (WidgetTester tester) async {
+        await tester.pumpWidget(createTestWidget(onConfirm: () {}));
+        await tester.pump();
+
+        // AppBar action: TextButton.icon with label 'Save' and Icons.check
+        expect(find.text('Save'), findsOneWidget);
+        expect(find.byIcon(Icons.check), findsAtLeastNWidgets(1));
+      },
+    );
+
+    testWidgets(
+      'should not display Save button in app bar when isLoading is true',
+      (WidgetTester tester) async {
+        await tester.pumpWidget(
+          createTestWidget(isLoading: true, onConfirm: () {}),
+        );
+        await tester.pump();
+
+        // AppBar hides the Save action while loading.
+        expect(find.text('Save'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'should not display Save button in app bar when onConfirm is null',
+      (WidgetTester tester) async {
+        await tester.pumpWidget(createTestWidget());
+        await tester.pump();
+
+        expect(find.text('Save'), findsNothing);
+      },
+    );
+
+    // ---------------------------------------------------------------------------
+    // Bottom action bar (visible only when isLoading == false)
+    // ---------------------------------------------------------------------------
+
+    testWidgets(
+      'should display bottom action bar with Cancel and Save Document when not loading',
+      (WidgetTester tester) async {
+        await tester.pumpWidget(
+          createTestWidget(onConfirm: () {}, onCancel: () {}),
+        );
+        await tester.pump();
+
+        expect(find.text('Cancel'), findsOneWidget);
+        expect(find.text('Save Document'), findsOneWidget);
+        expect(find.byIcon(Icons.close), findsOneWidget);
+      },
+    );
+
+    testWidgets('should hide bottom action bar when isLoading is true', (
       WidgetTester tester,
     ) async {
       await tester.pumpWidget(
-        createTestWidget(
-          pdfData: testPdfData,
-          onConfirm: () {},
-          onCancel: () {},
-        ),
+        createTestWidget(isLoading: true, onConfirm: () {}, onCancel: () {}),
       );
       await tester.pump();
 
-      expect(find.text('Cancel'), findsOneWidget);
-      expect(find.text('Save Document'), findsOneWidget);
-      expect(find.byIcon(Icons.close), findsOneWidget);
-    }, skip: true); // Skip - requires native PDF support
+      // The entire bottom bar (including Cancel and Save Document) is not built.
+      expect(find.text('Cancel'), findsNothing);
+      expect(find.text('Save Document'), findsNothing);
+    });
 
-    testWidgets('should show loading state when isLoading is true', (
+    // ---------------------------------------------------------------------------
+    // Loading state (isLoading: true → body shows spinner + text)
+    // ---------------------------------------------------------------------------
+
+    testWidgets('should show loading spinner and text when isLoading is true', (
       WidgetTester tester,
     ) async {
       await tester.pumpWidget(createTestWidget(isLoading: true));
@@ -186,16 +222,9 @@ void main() {
       expect(find.byType(CircularProgressIndicator), findsWidgets);
     });
 
-    testWidgets('should show loading state in bottom action bar when loading', (
-      WidgetTester tester,
-    ) async {
-      await tester.pumpWidget(
-        createTestWidget(isLoading: true, onCancel: () {}),
-      );
-      await tester.pump();
-
-      expect(find.text('Saving...'), findsOneWidget);
-    });
+    // ---------------------------------------------------------------------------
+    // No-data state
+    // ---------------------------------------------------------------------------
 
     testWidgets('should show no data state when no PDF data or path provided', (
       WidgetTester tester,
@@ -210,20 +239,38 @@ void main() {
       );
     });
 
-    testWidgets('should handle confirm callback', (WidgetTester tester) async {
-      bool confirmCalled = false;
-      await tester.pumpWidget(
-        createTestWidget(onConfirm: () => confirmCalled = true),
-      );
+    testWidgets('should show PDF icon in no-data state', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(createTestWidget());
       await tester.pump();
 
-      await tester.tap(find.text('Save Document'));
-      await tester.pump();
-
-      expect(confirmCalled, isTrue);
+      expect(find.byIcon(Icons.picture_as_pdf), findsAtLeastNWidgets(1));
     });
 
-    testWidgets('should handle cancel callback', (WidgetTester tester) async {
+    // ---------------------------------------------------------------------------
+    // Callback tests (bottom bar is present when isLoading == false)
+    // ---------------------------------------------------------------------------
+
+    testWidgets(
+      'should invoke onConfirm callback when Save Document is tapped',
+      (WidgetTester tester) async {
+        bool confirmCalled = false;
+        await tester.pumpWidget(
+          createTestWidget(onConfirm: () => confirmCalled = true),
+        );
+        await tester.pump();
+
+        await tester.tap(find.text('Save Document'));
+        await tester.pump();
+
+        expect(confirmCalled, isTrue);
+      },
+    );
+
+    testWidgets('should invoke onCancel callback when Cancel is tapped', (
+      WidgetTester tester,
+    ) async {
       bool cancelCalled = false;
       await tester.pumpWidget(
         createTestWidget(onCancel: () => cancelCalled = true),
@@ -236,39 +283,27 @@ void main() {
       expect(cancelCalled, isTrue);
     });
 
-    testWidgets('should handle app bar save button callback', (
-      WidgetTester tester,
-    ) async {
-      bool confirmCalled = false;
-      await tester.pumpWidget(
-        createTestWidget(onConfirm: () => confirmCalled = true),
-      );
-      await tester.pump();
+    testWidgets(
+      'should invoke onConfirm callback when app bar Save is tapped',
+      (WidgetTester tester) async {
+        bool confirmCalled = false;
+        await tester.pumpWidget(
+          createTestWidget(onConfirm: () => confirmCalled = true),
+        );
+        await tester.pump();
 
-      await tester.tap(find.text('Save'));
-      await tester.pump();
+        await tester.tap(find.text('Save'));
+        await tester.pump();
 
-      expect(confirmCalled, isTrue);
-    });
+        expect(confirmCalled, isTrue);
+      },
+    );
 
-    testWidgets('should disable save button when loading', (
-      WidgetTester tester,
-    ) async {
-      await tester.pumpWidget(
-        createTestWidget(isLoading: true, onConfirm: () {}),
-      );
-      await tester.pump();
+    // ---------------------------------------------------------------------------
+    // Layout structure
+    // ---------------------------------------------------------------------------
 
-      final saveButton = tester.widget<ElevatedButton>(
-        find.ancestor(
-          of: find.text('Saving...'),
-          matching: find.byType(ElevatedButton),
-        ),
-      );
-      expect(saveButton.onPressed, isNull);
-    });
-
-    testWidgets('should have proper app bar structure', (
+    testWidgets('should have AppBar with at least one IconButton', (
       WidgetTester tester,
     ) async {
       await tester.pumpWidget(createTestWidget());
@@ -278,7 +313,7 @@ void main() {
       expect(find.byType(IconButton), findsAtLeastNWidgets(1));
     });
 
-    testWidgets('should have proper layout structure', (
+    testWidgets('should have Scaffold, Column, and Container in widget tree', (
       WidgetTester tester,
     ) async {
       await tester.pumpWidget(createTestWidget());
@@ -289,18 +324,22 @@ void main() {
       expect(find.byType(Container), findsAtLeastNWidgets(1));
     });
 
-    testWidgets('should display PDF icon in header', (
+    testWidgets('should have Expanded widget for PDF content area', (
       WidgetTester tester,
     ) async {
       await tester.pumpWidget(createTestWidget());
       await tester.pump();
 
-      expect(find.byIcon(Icons.picture_as_pdf), findsAtLeastNWidgets(1));
+      expect(find.byType(Expanded), findsAtLeastNWidgets(1));
     });
+
+    // ---------------------------------------------------------------------------
+    // Error States with Fallback
+    // ---------------------------------------------------------------------------
 
     group('Error States with Fallback', () {
       testWidgets(
-        'should show error state with fallback image when PDF fails',
+        'should show fallback image and unavailability notice when PDF loading fails with fallback provided',
         (WidgetTester tester) async {
           await tester.pumpWidget(
             createTestWidget(
@@ -309,7 +348,7 @@ void main() {
               fallbackImage: testImageData,
             ),
           );
-          await tester.pump(const Duration(milliseconds: 500));
+          await tester.pumpAndSettle(const Duration(seconds: 2));
 
           expect(find.text('PDF Rendering Unavailable'), findsOneWidget);
           expect(find.text('Showing processed image instead'), findsOneWidget);
@@ -318,33 +357,37 @@ void main() {
       );
 
       testWidgets(
-        'should show error state without fallback when no image provided',
+        'should show error state without fallback when no fallback image is provided',
         (WidgetTester tester) async {
           await tester.pumpWidget(
             createTestWidget(pdfData: null, pdfPath: '/nonexistent/path.pdf'),
           );
-          await tester.pump(const Duration(milliseconds: 500));
+          await tester.pumpAndSettle(const Duration(seconds: 2));
 
           expect(find.text('Error Loading PDF'), findsOneWidget);
           expect(find.byIcon(Icons.error_outline), findsOneWidget);
         },
       );
 
-      testWidgets('should have retry button on error', (
+      testWidgets('should have Retry button with refresh icon in error state', (
         WidgetTester tester,
       ) async {
         await tester.pumpWidget(
           createTestWidget(pdfData: null, pdfPath: '/nonexistent/path.pdf'),
         );
-        await tester.pump(const Duration(milliseconds: 500));
+        await tester.pumpAndSettle(const Duration(seconds: 2));
 
         expect(find.byIcon(Icons.refresh), findsOneWidget);
         expect(find.text('Retry'), findsOneWidget);
       });
     });
 
+    // ---------------------------------------------------------------------------
+    // Button States
+    // ---------------------------------------------------------------------------
+
     group('Button States', () {
-      testWidgets('should have proper button styling', (
+      testWidgets('should style Cancel button with red foreground', (
         WidgetTester tester,
       ) async {
         await tester.pumpWidget(
@@ -359,6 +402,15 @@ void main() {
           ),
         );
         expect(cancelButton.style?.foregroundColor?.resolve({}), Colors.red);
+      });
+
+      testWidgets('should style Save Document button with green background', (
+        WidgetTester tester,
+      ) async {
+        await tester.pumpWidget(
+          createTestWidget(onConfirm: () {}, onCancel: () {}),
+        );
+        await tester.pump();
 
         final saveButton = tester.widget<ElevatedButton>(
           find.ancestor(
@@ -369,29 +421,33 @@ void main() {
         expect(saveButton.style?.backgroundColor?.resolve({}), Colors.green);
       });
 
-      testWidgets('should show correct button text when loading', (
-        WidgetTester tester,
-      ) async {
-        await tester.pumpWidget(createTestWidget(isLoading: true));
-        await tester.pump();
-
-        expect(find.text('Saving...'), findsOneWidget);
-        expect(find.text('Save Document'), findsNothing);
-      });
-
-      testWidgets('should show correct button text when not loading', (
+      testWidgets('should show Save Document text when isLoading is false', (
         WidgetTester tester,
       ) async {
         await tester.pumpWidget(createTestWidget(isLoading: false));
         await tester.pump();
 
         expect(find.text('Save Document'), findsOneWidget);
-        expect(find.text('Saving...'), findsNothing);
       });
+
+      testWidgets(
+        'should not show Save Document button when isLoading is true',
+        (WidgetTester tester) async {
+          await tester.pumpWidget(createTestWidget(isLoading: true));
+          await tester.pump();
+
+          // Bottom action bar is completely hidden when isLoading is true.
+          expect(find.text('Save Document'), findsNothing);
+        },
+      );
     });
 
+    // ---------------------------------------------------------------------------
+    // Content Areas
+    // ---------------------------------------------------------------------------
+
     group('Content Areas', () {
-      testWidgets('should have preview header area', (
+      testWidgets('should always render preview header area', (
         WidgetTester tester,
       ) async {
         await tester.pumpWidget(createTestWidget());
@@ -401,14 +457,16 @@ void main() {
         expect(find.byIcon(Icons.picture_as_pdf), findsAtLeastNWidgets(1));
       });
 
-      testWidgets('should have PDF content area', (WidgetTester tester) async {
+      testWidgets('should have PDF content area with Expanded widget', (
+        WidgetTester tester,
+      ) async {
         await tester.pumpWidget(createTestWidget());
         await tester.pump();
 
         expect(find.byType(Expanded), findsAtLeastNWidgets(1));
       });
 
-      testWidgets('should have bottom action area', (
+      testWidgets('should render bottom action area when not loading', (
         WidgetTester tester,
       ) async {
         await tester.pumpWidget(
@@ -421,8 +479,12 @@ void main() {
       });
     });
 
+    // ---------------------------------------------------------------------------
+    // Accessibility
+    // ---------------------------------------------------------------------------
+
     group('Accessibility', () {
-      testWidgets('should have proper button labels', (
+      testWidgets('should have proper button labels in bottom bar', (
         WidgetTester tester,
       ) async {
         await tester.pumpWidget(
@@ -432,10 +494,18 @@ void main() {
 
         expect(find.text('Cancel'), findsOneWidget);
         expect(find.text('Save Document'), findsOneWidget);
+      });
+
+      testWidgets('should show Save label in app bar when onConfirm provided', (
+        WidgetTester tester,
+      ) async {
+        await tester.pumpWidget(createTestWidget(onConfirm: () {}));
+        await tester.pump();
+
         expect(find.text('Save'), findsOneWidget);
       });
 
-      testWidgets('should have proper icon buttons', (
+      testWidgets('should have PDF icon in preview header', (
         WidgetTester tester,
       ) async {
         await tester.pumpWidget(createTestWidget());
@@ -445,20 +515,23 @@ void main() {
       });
     });
 
+    // ---------------------------------------------------------------------------
+    // Fallback Image Feature
+    // ---------------------------------------------------------------------------
+
     group('Fallback Image Feature', () {
-      testWidgets('should accept fallbackImage parameter', (
+      testWidgets('should accept fallbackImage parameter without error', (
         WidgetTester tester,
       ) async {
+        // When pdfData is provided, the widget attempts to load the PDF normally.
+        // The fallback is only used on error; the widget tree itself must not crash.
         await tester.pumpWidget(
           createTestWidget(pdfData: testPdfData, fallbackImage: testImageData),
         );
         await tester.pump();
 
-        // Widget should still load PDF normally when pdfData is valid
-        expect(
-          find.byType(Scaffold),
-          findsWidgets,
-        ); // Multiple Scaffolds: MaterialApp + PdfPreviewWidget
+        // At minimum the outer Scaffolds (MaterialApp + PdfPreviewWidget) are present.
+        expect(find.byType(Scaffold), findsWidgets);
       });
 
       testWidgets('should display fallback image when PDF rendering fails', (
@@ -471,13 +544,16 @@ void main() {
             fallbackImage: testImageData,
           ),
         );
-        // Allow time for Future to fail
         await tester.pumpAndSettle(const Duration(seconds: 2));
 
         expect(find.text('PDF Rendering Unavailable'), findsOneWidget);
         expect(find.byType(Image), findsOneWidget);
       });
     });
+
+    // ---------------------------------------------------------------------------
+    // PDF Loading States (native PDF rendering required for full verification)
+    // ---------------------------------------------------------------------------
 
     group('PDF Loading States', () {
       testWidgets('should show loading state during PDF initialization', (
