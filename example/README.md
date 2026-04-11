@@ -1,98 +1,62 @@
-# Document Scanner Example (Phase 2 Showcase)
+# Document Scanner Example
 
-This example application has been rewritten to act as the Phase 2 showcase for the rebuilt `document_scanner` APIs. Instead of a single demo screen, the app now exposes dedicated experiences that mirror production scenarios and exercise every public surface area of the library.
+Showcase app for the `document_scanner` Flutter package. Exercises every public API surface through three tabs and a floating action menu.
 
-## Features at a glance
+## Screens
 
-- **Single Page Capture** – launches `DocumentScannerWidget`, walks through the image editor, PDF preview, and surfaces metadata/paths after saving.  
-  _Placeholder GIF_: `![Single page flow](docs/images/showcase_single_page.gif)`
-- **Multi-Page Session Lab** – highlights `MultiPageScannerWidget`, page management, preview/reorder flows, and final PDF generation.  
-  _Placeholder GIF_: `![Multi-page flow](docs/images/showcase_multi_page.gif)`
-- **PDF Review Center** – feeds saved `ScannedDocument` instances into `PdfPreviewWidget`, reloads bytes from disk, and displays metadata in dialogs.  
-  _Placeholder image_: `![PDF preview screen](docs/images/showcase_pdf_preview.png)`
-- **Capabilities Lab** – interactive playground for `DocumentProcessingOptions` that calls `DocumentScannerService.scanDocumentWithProcessing` / `importDocumentWithProcessing` directly so you can toggle grayscale, compression, DPI, output formats, and filenames.  
-  _Placeholder GIF_: `![Capabilities lab](docs/images/showcase_capabilities.gif)`
+### Quick Scan
+Single-page capture via `DocumentScannerWidget` (guided flow) or direct camera/gallery import. Includes image editing, PDF preview, and metadata display.
 
-Each flow records its results in a shared timeline on the home screen so you can hop back into previews or re-run tests quickly.
+### Multi Scan
+Multi-page session using `MultiPageScannerWidget`. Capture multiple pages, reorder them, and finalize into a single PDF. Shows a page grid with thumbnails, timestamps, and a metadata dialog.
 
-## Getting started (Android-only)
+### Lab
+Interactive playground for `DocumentProcessingOptions`. Toggle grayscale, contrast, perspective correction, compression, DPI, and output format, then call `scanDocumentWithProcessing` / `importDocumentWithProcessing` directly.
+
+### Shared features
+- **Storage configuration** — tap the FAB menu to set app name, custom directory, and default filename. All tabs respect these settings.
+- **Scan history** — every flow records results in a shared timeline accessible from the FAB menu.
+- **PDF preview** — all screens use the shared `openPdfPreview` helper to load and display PDFs via `PdfPreviewWidget`.
+
+## Getting started
 
 1. Install Flutter 3+ and Android tooling.
-2. From the repo root run:
+2. From the repo root:
    ```bash
    cd example
    flutter pub get
    flutter run
    ```
-3. The home screen lets you call `DocumentScannerService().configureStorage()` with an app name, optional custom directory, and a default filename. Update these fields first so every flow writes into a predictable location.
+3. Grant camera and storage permissions when prompted.
 
-> ⚠️ **Permissions**: Camera + storage permissions must be granted (emulator or device) for capture, multi-page, and capabilities lab flows. The PDF review screen requires that at least one document was previously saved so the preview widget can read bytes from disk.
+> The app requires a physical device or emulator with camera support for capture flows. Gallery import works on emulators.
 
-## Flow walkthroughs
+## Project structure
 
-### Single Page Capture
-1. Configure an optional filename in the top text field.
-2. Pick the document type chip (document, receipt, or manual).
-3. Tap **Launch scanner** to fire `DocumentScannerWidget`.
-4. Go through the editor (rotation, filters, perspective); when you confirm, `PdfPreviewWidget` is shown before saving.
-5. Back on the showcase screen you’ll see: preview thumbnail, pdf/process paths, metadata table, processing options, and a button that re-opens the PDF preview.
-
-### Multi-Page Session Lab
-1. Enter a session-specific filename (defaults to metadata-driven naming if blank).
-2. Tap **Start multi-page session** to open `MultiPageScannerWidget`.
-3. Capture at least two pages, open the preview grid, reorder them, and finalize the document.
-4. The screen renders the aggregated `ScanResultDetails` plus a card per page (with timestamps and metadata) so you can verify ordering.
-
-### PDF Review Center
-1. After running any scan, navigate to **PDF Review** from the home screen.
-2. Each saved document appears with type, page count, and absolute PDF path.
-3. Tap **Preview PDF** to push `PdfPreviewWidget`. The widget loads in-memory bytes when available, otherwise it reads directly from `document.pdfPath`.
-4. Use the info icon to view raw metadata (custom filenames, sizes, timestamps) in an alert dialog.
-
-### Capabilities Lab
-1. Toggle switches to control grayscale, contrast, perspective, PDF generation, and whether to emit an image alongside the PDF.
-2. Adjust compression and pick the `PdfResolution` / `DocumentFormat` combos.
-3. Optionally override the filename per run.
-4. Use **Capture with camera** or **Import from gallery**; both call the processing-first service methods.
-5. Inspect the resulting `ScanResult` with metadata, preview, and the global timeline to confirm the toggles behaved as expected.
-
-## Manual test checklist
-
-Run these steps on a physical device or emulator to validate the showcase:
-
-1. Apply a custom `appName`, storage directory, and default filename. Capture a single page and verify the resulting files land in the custom directory using the configured name.
-2. Launch Single Page Capture, go through the editor, finish via the PDF preview, and confirm the metadata/paths/preview render on the detail card.
-3. Launch a multi-page session with at least three pages, reorder them once, and finalize the PDF. Ensure the page list reflects the correct count and ordering.
-4. Open the PDF Review screen and preview both of the above scans via `PdfPreviewWidget`.
-5. In the Capabilities Lab, disable grayscale, enable “save processed image”, set DPI to `original`, and run both camera + gallery experiments. Confirm the result card shows two output paths (PDF + image).
-6. Trigger an error (deny a permission or cancel mid-flow) and verify it is recorded in the home timeline with the correct status chip.
-
-These mirror the checklist surfaced inside the app (tap the clipboard icon in the home app bar).
+```
+lib/
+  helpers/
+    pdf_preview_helper.dart   # Shared PDF preview navigation
+  screens/
+    single_page_screen.dart   # Quick Scan tab
+    multi_page_screen.dart    # Multi Scan tab
+    capabilities_lab_screen.dart  # Lab tab
+    pdf_preview_screen.dart   # PDF preview route
+  state/
+    showcase_state.dart       # App state via InheritedNotifier
+  widgets/
+    empty_state.dart          # Empty placeholder widget
+    scan_result_details.dart  # Result card with metadata
+    section_header.dart       # Section title widget
+  app.dart                    # Tab shell, config dialog, history dialog
+  main.dart                   # Entry point
+```
 
 ## Testing
 
-From the repo root or the `example` directory you can run:
-
 ```bash
+flutter analyze
 flutter test
 ```
 
-All example code uses `flutter_lints`, so you can optionally format/analyze with:
-
-```bash
-flutter format lib
-flutter analyze
-```
-
-(Formatting/linting will run automatically inside CI as part of the main package.)
-
-## Screenshot / GIF placeholders
-
-Replace the placeholder references above with your own capture assets under `example/docs/images/`. Suggested filenames:
-
-- `showcase_single_page.gif`
-- `showcase_multi_page.gif`
-- `showcase_pdf_preview.png`
-- `showcase_capabilities.gif`
-
-Keeping the assets in that directory allows both the example README and the root README to embed the same visuals.
+Formatting and analysis also run in CI as part of the main package workflow.
