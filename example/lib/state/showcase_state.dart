@@ -9,11 +9,18 @@ class ShowcaseState extends ChangeNotifier {
   String? _customDirectory;
   String? _defaultFilename;
   String? _lastConfigSummary;
+  int _filenameVersion = 0;
 
   String get appName => _appName;
   String? get customDirectory => _customDirectory;
   String? get defaultFilename => _defaultFilename;
   String? get lastConfigSummary => _lastConfigSummary;
+  int get filenameVersion => _filenameVersion;
+
+  /// Display-friendly storage path. Returns the custom directory if set,
+  /// otherwise a placeholder that matches what [StorageHelper] would resolve.
+  String get storageDisplayPath =>
+      _customDirectory ?? 'Default storage ($appName)';
 
   List<ScanSessionLog> get history => List.unmodifiable(_history);
 
@@ -32,8 +39,12 @@ class ShowcaseState extends ChangeNotifier {
       .toList(growable: false);
 
   void configureStorage({String? appName, String? customDirectory}) {
-    final sanitizedAppName = (appName ?? _appName).trim().isEmpty ? _appName : (appName ?? _appName).trim();
-    final sanitizedDirectory = (customDirectory ?? '').trim().isEmpty ? null : (customDirectory ?? '').trim();
+    final sanitizedAppName = (appName ?? _appName).trim().isEmpty
+        ? _appName
+        : (appName ?? _appName).trim();
+    final sanitizedDirectory = (customDirectory ?? '').trim().isEmpty
+        ? null
+        : (customDirectory ?? '').trim();
 
     DocumentScannerService().configureStorage(
       appName: sanitizedAppName,
@@ -48,11 +59,13 @@ class ShowcaseState extends ChangeNotifier {
 
   void resetStorage() {
     _defaultFilename = null;
+    _filenameVersion++;
     configureStorage(appName: 'DocumentScannerShowcase', customDirectory: null);
   }
 
   void setDefaultFilename(String? value) {
     _defaultFilename = value?.trim().isEmpty ?? true ? null : value?.trim();
+    _filenameVersion++;
     notifyListeners();
   }
 
@@ -65,7 +78,10 @@ class ShowcaseState extends ChangeNotifier {
   }
 
   void addResult(String flow, ScanResult result) {
-    _history.insert(0, ScanSessionLog(flow: flow, result: result, timestamp: DateTime.now()));
+    _history.insert(
+        0,
+        ScanSessionLog(
+            flow: flow, result: result, timestamp: DateTime.now()));
     if (_history.length > _maxHistory) {
       _history.removeRange(_maxHistory, _history.length);
     }
@@ -78,7 +94,8 @@ class ScanSessionLog {
   final ScanResult result;
   final DateTime timestamp;
 
-  ScanSessionLog({required this.flow, required this.result, required this.timestamp});
+  ScanSessionLog(
+      {required this.flow, required this.result, required this.timestamp});
 }
 
 class ShowcaseStateScope extends InheritedNotifier<ShowcaseState> {
@@ -89,13 +106,15 @@ class ShowcaseStateScope extends InheritedNotifier<ShowcaseState> {
   }) : super(notifier: notifier);
 
   static ShowcaseState watch(BuildContext context) {
-    final scope = context.dependOnInheritedWidgetOfExactType<ShowcaseStateScope>();
+    final scope =
+        context.dependOnInheritedWidgetOfExactType<ShowcaseStateScope>();
     assert(scope != null, 'ShowcaseStateScope not found in context');
     return scope!.notifier!;
   }
 
   static ShowcaseState read(BuildContext context) {
-    final element = context.getElementForInheritedWidgetOfExactType<ShowcaseStateScope>();
+    final element = context
+        .getElementForInheritedWidgetOfExactType<ShowcaseStateScope>();
     assert(element != null, 'ShowcaseStateScope not found in context');
     final scope = element!.widget as ShowcaseStateScope;
     return scope.notifier!;

@@ -1,9 +1,8 @@
-import 'dart:io';
-
 import 'package:document_scanner/document_scanner.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../helpers/pdf_preview_helper.dart';
 import '../state/showcase_state.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/scan_result_details.dart';
@@ -18,16 +17,22 @@ class SinglePageScreen extends StatefulWidget {
   State<SinglePageScreen> createState() => _SinglePageScreenState();
 }
 
+enum _Action { none, guided, camera, gallery }
+
 class _SinglePageScreenState extends State<SinglePageScreen> {
   final DocumentScannerService _scannerService = DocumentScannerService();
   final TextEditingController _filenameController = TextEditingController();
 
   DocumentType _selectedType = DocumentType.document;
-  bool _appliedDefault = false;
-  bool _isGuidedLaunching = false;
-  bool _isCameraProcessing = false;
-  bool _isGalleryProcessing = false;
+  _Action _activeAction = _Action.none;
   ScanResult? _lastResult;
+
+  // Track which filename version was last applied so we can re-sync
+  // when the user changes the global default via the config dialog.
+  int _lastFilenameVersion = -1;
+  String? _lastAppliedDefault;
+
+  bool get _isBusy => _activeAction != _Action.none;
 
   @override
   void initState() {
@@ -35,19 +40,21 @@ class _SinglePageScreenState extends State<SinglePageScreen> {
     _filenameController.addListener(_onFilenameChanged);
   }
 
-  void _onFilenameChanged() {
-    setState(() {});
-  }
+  void _onFilenameChanged() => setState(() {});
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_appliedDefault) {
-      final defaultName = ShowcaseStateScope.read(context).defaultFilename;
-      if (defaultName != null) {
-        _filenameController.text = defaultName;
+    final state = ShowcaseStateScope.read(context);
+    if (_lastFilenameVersion != state.filenameVersion) {
+      final current = _filenameController.text.trim();
+      final isUserEdit =
+          current.isNotEmpty && current != _lastAppliedDefault;
+      if (!isUserEdit) {
+        _filenameController.text = state.defaultFilename ?? '';
       }
-      _appliedDefault = true;
+      _lastAppliedDefault = state.defaultFilename;
+      _lastFilenameVersion = state.filenameVersion;
     }
   }
 
@@ -61,23 +68,24 @@ class _SinglePageScreenState extends State<SinglePageScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ShowcaseStateScope.watch(context);
-    final resolvedFilename = state.resolveFilename(_filenameController.text);
-    final isBusy = _isGuidedLaunching || _isCameraProcessing || _isGalleryProcessing;
+    final resolvedFilename =
+        state.resolveFilename(_filenameController.text);
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         const SectionHeader(
           icon: Icons.document_scanner,
           title: 'Single Page Capture',
-          subtitle: 'Uses DocumentScannerWidget → ImageEditingWidget → PdfPreviewWidget, then surfaces metadata.',
+          subtitle:
+              'Guided scanner with image editing, or quick capture via camera / gallery.',
         ),
         const SizedBox(height: 12),
-        if (_lastResult == null)
-          const _FirstScanBanner(),
+        if (_lastResult == null) const _FirstScanBanner(),
         const SizedBox(height: 12),
         _NamingStrategyBanner(
           resolvedFilename: resolvedFilename,
-          storageDirectory: state.customDirectory ?? '/Documents/${state.appName}',
+          storageDirectory: state.storageDisplayPath,
         ),
         const SizedBox(height: 12),
         _buildTypeSelector(),
@@ -85,40 +93,44 @@ class _SinglePageScreenState extends State<SinglePageScreen> {
         TextField(
           controller: _filenameController,
           decoration: const InputDecoration(
-            labelText: 'Custom filename (overrides default for this run)',
+            labelText: 'Custom filename (overrides default)',
             prefixIcon: Icon(Icons.drive_file_rename_outline),
           ),
         ),
         const SizedBox(height: 16),
         FilledButton.icon(
-          onPressed: isBusy ? null : _launchGuidedScanner,
-          icon: _isGuidedLaunching
-              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+          onPressed: _isBusy ? null : _launchGuidedScanner,
+          icon: _activeAction == _Action.guided
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2))
               : const Icon(Icons.play_arrow),
-          label: Text(_isGuidedLaunching ? 'Launching…' : 'Launch guided scanner'),
+          label: Text(_activeAction == _Action.guided
+              ? 'Launching...'
+              : 'Launch guided scanner'),
         ),
-          const SizedBox(height: 16),
-          _buildQuickActions(),
-          const SizedBox(height: 24),
-          if (_lastResult != null)
-            ScanResultDetails(
-              result: _lastResult!,
-              showPreviewButton: true,
-              onPreview: () {
-                final doc = _lastResult!.document;
-                if (doc != null) {
-                  _openPreview(doc);
-                }
-              },
-            )
-          else
-            const EmptyState(
-              icon: Icons.photo_camera_back,
-              title: 'Ready when you are',
-              message: 'Capture a document to see file paths, metadata, and a live preview.',
-            ),
-          const SizedBox(height: 32),
-        ],
+        const SizedBox(height: 16),
+        _buildQuickActions(),
+        const SizedBox(height: 24),
+        if (_lastResult != null)
+          ScanResultDetails(
+            result: _lastResult!,
+            showPreviewButton: true,
+            onPreview: () {
+              final doc = _lastResult!.document;
+              if (doc != null) openPdfPreview(context, doc);
+            },
+          )
+        else
+          const EmptyState(
+            icon: Icons.photo_camera_back,
+            title: 'Ready when you are',
+            message:
+                'Capture a document to see file paths, metadata, and a live preview.',
+          ),
+        const SizedBox(height: 32),
+      ],
     );
   }
 
@@ -131,22 +143,19 @@ class _SinglePageScreenState extends State<SinglePageScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Document type', style: Theme.of(context).textTheme.titleMedium),
+        Text('Document type',
+            style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
           children: options
-              .map(
-                (option) => ChoiceChip(
-                  label: Text(option.name),
-                  selected: _selectedType == option,
-                  onSelected: (selected) {
-                    if (selected) {
-                      setState(() => _selectedType = option);
-                    }
-                  },
-                ),
-              )
+              .map((option) => ChoiceChip(
+                    label: Text(option.name),
+                    selected: _selectedType == option,
+                    onSelected: (selected) {
+                      if (selected) setState(() => _selectedType = option);
+                    },
+                  ))
               .toList(),
         ),
       ],
@@ -157,31 +166,43 @@ class _SinglePageScreenState extends State<SinglePageScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Quick actions', style: Theme.of(context).textTheme.titleMedium),
+        Text('Quick actions',
+            style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
         Row(
           children: [
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: _isCameraProcessing || _isGuidedLaunching || _isGalleryProcessing
-                    ? null
-                    : () => _runQuickAction(useCamera: true),
-                icon: _isCameraProcessing
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                onPressed:
+                    _isBusy ? null : () => _runQuickAction(useCamera: true),
+                icon: _activeAction == _Action.camera
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child:
+                            CircularProgressIndicator(strokeWidth: 2))
                     : const Icon(Icons.camera_alt),
-                label: Text(_isCameraProcessing ? 'Capturing…' : 'Capture with camera'),
+                label: Text(_activeAction == _Action.camera
+                    ? 'Capturing...'
+                    : 'Camera'),
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: _isGalleryProcessing || _isGuidedLaunching || _isCameraProcessing
+                onPressed: _isBusy
                     ? null
                     : () => _runQuickAction(useCamera: false),
-                icon: _isGalleryProcessing
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                icon: _activeAction == _Action.gallery
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child:
+                            CircularProgressIndicator(strokeWidth: 2))
                     : const Icon(Icons.photo_library),
-                label: Text(_isGalleryProcessing ? 'Importing…' : 'Import from gallery'),
+                label: Text(_activeAction == _Action.gallery
+                    ? 'Importing...'
+                    : 'Gallery'),
               ),
             ),
           ],
@@ -190,8 +211,12 @@ class _SinglePageScreenState extends State<SinglePageScreen> {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Actions
+  // ---------------------------------------------------------------------------
+
   Future<void> _launchGuidedScanner() async {
-    setState(() => _isGuidedLaunching = true);
+    setState(() => _activeAction = _Action.guided);
     final state = ShowcaseStateScope.read(context);
     final filename = state.resolveFilename(_filenameController.text);
 
@@ -201,20 +226,18 @@ class _SinglePageScreenState extends State<SinglePageScreen> {
         builder: (routeContext) => DocumentScannerWidget(
           documentType: _selectedType,
           customFilename: filename,
-          customHeader: _SinglePageScannerBanner(filename: filename),
-          onScanComplete: (scanResult) => Navigator.pop(routeContext, scanResult),
+          customHeader: _GuidedScannerBanner(filename: filename),
+          onScanComplete: (r) => Navigator.pop(routeContext, r),
           onError: (error) {
-            ScaffoldMessenger.of(routeContext).showSnackBar(
-              SnackBar(content: Text(error)),
-            );
+            ScaffoldMessenger.of(routeContext)
+                .showSnackBar(SnackBar(content: Text(error)));
           },
         ),
       ),
     );
 
     if (!mounted) return;
-
-    setState(() => _isGuidedLaunching = false);
+    setState(() => _activeAction = _Action.none);
 
     if (result != null) {
       _handleResult(result, flowLabel: 'Single Page');
@@ -226,186 +249,122 @@ class _SinglePageScreenState extends State<SinglePageScreen> {
   }
 
   Future<void> _runQuickAction({required bool useCamera}) async {
-    setState(() {
-      if (useCamera) {
-        _isCameraProcessing = true;
-      } else {
-        _isGalleryProcessing = true;
-      }
-    });
+    setState(() =>
+        _activeAction = useCamera ? _Action.camera : _Action.gallery);
 
     final state = ShowcaseStateScope.read(context);
     final filename = state.resolveFilename(_filenameController.text);
 
     try {
-      // Get the initial scan result with raw image data
       final result = useCamera
           ? await _scannerService.scanDocument(
-              documentType: _selectedType,
-              customFilename: filename,
-            )
+              documentType: _selectedType, customFilename: filename)
           : await _scannerService.importDocument(
-              documentType: _selectedType,
-              customFilename: filename,
-            );
+              documentType: _selectedType, customFilename: filename);
 
       if (!mounted) return;
-      
-      if (result.success && result.document != null && result.document!.rawImageData != null) {
-        // Use the shared helper method to show the editor flow
+
+      if (result.success &&
+          result.document != null &&
+          result.document!.rawImageData != null) {
         final finalResult = await _scannerService.showImageEditorFlow(
           context: context,
           document: result.document!,
           customFilename: filename,
           processingOptions: result.document!.processingOptions,
         );
-        
         if (mounted) {
-          _handleResult(
-            finalResult,
-            flowLabel: useCamera ? 'Single Page (Camera)' : 'Single Page (Gallery)',
-          );
+          _handleResult(finalResult,
+              flowLabel:
+                  useCamera ? 'Single Page (Camera)' : 'Single Page (Gallery)');
         }
       } else {
-        // Handle case where scan failed or no image data is available
-        _handleResult(
-          result,
-          flowLabel: useCamera ? 'Single Page (Camera)' : 'Single Page (Gallery)',
-        );
+        _handleResult(result,
+            flowLabel:
+                useCamera ? 'Single Page (Camera)' : 'Single Page (Gallery)');
       }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to ${useCamera ? 'capture' : 'import'}: $e')),
+        SnackBar(
+            content:
+                Text('Failed to ${useCamera ? 'capture' : 'import'}: $e')),
       );
     } finally {
-      if (mounted) {
-        setState(() {
-          if (useCamera) {
-            _isCameraProcessing = false;
-          } else {
-            _isGalleryProcessing = false;
-          }
-        });
-      }
+      if (mounted) setState(() => _activeAction = _Action.none);
     }
   }
 
   void _handleResult(ScanResult result, {required String flowLabel}) {
-    // Lightweight logging for debugging (guarded by debug mode)
     if (kDebugMode) {
-      print('DocumentScanner: $flowLabel - Result: ${result.success ? "SUCCESS" : "FAILED"}');
-      if (result.success) {
-        print('DocumentScanner: Document ID: ${result.document?.id}');
-        print('DocumentScanner: PDF Path: ${result.document?.pdfPath}');
-        print('DocumentScanner: Processed Path: ${result.document?.processedPath}');
-      } else {
-        print('DocumentScanner: Error: ${result.error}');
-      }
+      debugPrint('DocumentScanner: $flowLabel - '
+          '${result.success ? "SUCCESS" : "FAILED"}');
     }
 
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _lastResult = result);
-
-    final state = ShowcaseStateScope.read(context);
-    state.addResult(flowLabel, result);
+    ShowcaseStateScope.read(context).addResult(flowLabel, result);
 
     if (result.success) {
       messenger.showSnackBar(
-        SnackBar(content: Text('Saved ${_resultDisplayName(result)}')),
-      );
+          SnackBar(content: Text('Saved ${_displayName(result)}')));
     } else {
       messenger.showSnackBar(
-        SnackBar(content: Text(result.error ?? 'Scan failed')),
-      );
+          SnackBar(content: Text(result.error ?? 'Scan failed')));
     }
   }
 
-  String _resultDisplayName(ScanResult result) {
+  String _displayName(ScanResult result) {
     final document = result.document;
-    if (document == null) {
-      return 'new scan';
-    }
-    final customName = document.metadata['customFilename'];
-    if (customName is String && customName.isNotEmpty) {
-      return customName;
-    }
+    if (document == null) return 'new scan';
+    final custom = document.metadata['customFilename'];
+    if (custom is String && custom.isNotEmpty) return custom;
     return document.id;
   }
-
-  Future<void> _openPreview(ScannedDocument document) async {
-    if (document.pdfData == null && document.pdfPath == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No PDF generated yet. Enable PDF output to preview.')),
-      );
-      return;
-    }
-
-    Uint8List? pdfData = document.pdfData;
-    if (pdfData == null && document.pdfPath != null) {
-      final file = File(document.pdfPath!);
-      if (await file.exists()) {
-        pdfData = await file.readAsBytes();
-      }
-    }
-
-    if (!mounted) return;
-
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (previewContext) => PdfPreviewWidget(
-          pdfData: pdfData,
-          pdfPath: document.pdfPath,
-          title: 'Preview ${document.metadata['customFilename'] ?? document.id}',
-          onConfirm: () => Navigator.pop(previewContext),
-          onCancel: () => Navigator.pop(previewContext),
-        ),
-      ),
-    );
-  }
 }
+
+// ---------------------------------------------------------------------------
+// Banners
+// ---------------------------------------------------------------------------
 
 class _NamingStrategyBanner extends StatelessWidget {
   final String? resolvedFilename;
   final String storageDirectory;
 
-  const _NamingStrategyBanner({required this.resolvedFilename, required this.storageDirectory});
+  const _NamingStrategyBanner(
+      {required this.resolvedFilename, required this.storageDirectory});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final title = resolvedFilename == null ? 'Automatic naming enabled' : 'Using "$resolvedFilename"';
+    final title = resolvedFilename == null
+        ? 'Automatic naming'
+        : 'Filename: "$resolvedFilename"';
     final subtitle = resolvedFilename == null
-        ? 'Files will use metadata-driven names.'
-        : 'Overrides will apply only to this session.';
+        ? 'Files use metadata-driven names.'
+        : 'Applied to the next scan from this tab.';
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: theme.colorScheme.secondaryContainer,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         children: [
-          Icon(Icons.badge_outlined, color: theme.colorScheme.onSecondaryContainer),
+          Icon(Icons.badge_outlined,
+              color: theme.colorScheme.onSecondaryContainer),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: theme.colorScheme.onSecondaryContainer,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '$subtitle Stored under $storageDirectory.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSecondaryContainer,
-                  ),
-                ),
+                Text(title,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                        color: theme.colorScheme.onSecondaryContainer)),
+                const SizedBox(height: 2),
+                Text('$subtitle Storage: $storageDirectory',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSecondaryContainer)),
               ],
             ),
           ),
@@ -422,81 +381,23 @@ class _FirstScanBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: theme.colorScheme.primaryContainer,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: theme.colorScheme.primary.withValues(alpha: 0.3)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              Icon(Icons.lightbulb, color: theme.colorScheme.onPrimaryContainer),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'First scan?',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: theme.colorScheme.onPrimaryContainer,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Start quick with camera capture or gallery import. For longer documents, switch to the Multi Scan tab.',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onPrimaryContainer,
+          Icon(Icons.lightbulb_outline,
+              color: theme.colorScheme.onPrimaryContainer),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Tap a button below to capture or import your first document. '
+              'For multi-page documents, switch to the Multi Scan tab.',
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: theme.colorScheme.onPrimaryContainer),
             ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 16,
-            runSpacing: 4,
-            children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.arrow_upward,
-                    size: 16,
-                    color: theme.colorScheme.onPrimaryContainer,
-                  ),
-                  const SizedBox(width: 4),
-                  Flexible(
-                    child: Text(
-                      'Try the quick actions below',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onPrimaryContainer,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.tab,
-                    size: 16,
-                    color: theme.colorScheme.onPrimaryContainer,
-                  ),
-                  const SizedBox(width: 4),
-                  Flexible(
-                    child: Text(
-                      'Multi Scan for multiple pages',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onPrimaryContainer,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
           ),
         ],
       ),
@@ -504,28 +405,29 @@ class _FirstScanBanner extends StatelessWidget {
   }
 }
 
-class _SinglePageScannerBanner extends StatelessWidget {
+class _GuidedScannerBanner extends StatelessWidget {
   final String? filename;
 
-  const _SinglePageScannerBanner({this.filename});
+  const _GuidedScannerBanner({this.filename});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       color: Theme.of(context).colorScheme.secondaryContainer,
       child: Row(
         children: [
-          Icon(Icons.tips_and_updates, color: Theme.of(context).colorScheme.onSecondaryContainer),
+          Icon(Icons.tips_and_updates,
+              color: Theme.of(context).colorScheme.onSecondaryContainer),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
               filename == null
                   ? 'Files will use automatic naming'
-                  : 'Files will be saved as "$filename"',
+                  : 'Saving as "$filename"',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSecondaryContainer,
-                  ),
+                  color:
+                      Theme.of(context).colorScheme.onSecondaryContainer),
             ),
           ),
         ],

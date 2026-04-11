@@ -1,9 +1,7 @@
-import 'dart:io';
-import 'dart:typed_data';
-
 import 'package:document_scanner/document_scanner.dart';
 import 'package:flutter/material.dart';
 
+import '../helpers/pdf_preview_helper.dart';
 import '../state/showcase_state.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/scan_result_details.dart';
@@ -18,6 +16,8 @@ class CapabilitiesLabScreen extends StatefulWidget {
   State<CapabilitiesLabScreen> createState() => _CapabilitiesLabScreenState();
 }
 
+enum _LabAction { none, camera, gallery }
+
 class _CapabilitiesLabScreenState extends State<CapabilitiesLabScreen> {
   DocumentType _documentType = DocumentType.document;
   bool _grayscale = true;
@@ -29,9 +29,11 @@ class _CapabilitiesLabScreenState extends State<CapabilitiesLabScreen> {
   PdfResolution _resolution = PdfResolution.quality;
   DocumentFormat _format = DocumentFormat.auto;
   final TextEditingController _filenameController = TextEditingController();
-  bool _isProcessing = false;
+  _LabAction _activeAction = _LabAction.none;
   ScanResult? _lastResult;
   String? _error;
+
+  bool get _isBusy => _activeAction != _LabAction.none;
 
   @override
   void dispose() {
@@ -47,81 +49,104 @@ class _CapabilitiesLabScreenState extends State<CapabilitiesLabScreen> {
         const SectionHeader(
           icon: Icons.science,
           title: 'Capabilities Lab',
-          subtitle: 'Toggle processing options on the fly. Directly calls DocumentScannerService.scan/importWithProcessing to bypass the UI widgets.',
+          subtitle:
+              'Toggle processing options and call the scanner service directly.',
         ),
         const SizedBox(height: 12),
-          if (_error != null)
-            Card(
-              color: Theme.of(context).colorScheme.errorContainer,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Text(
-                  _error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer),
-                ),
+        if (_error != null)
+          Card(
+            color: Theme.of(context).colorScheme.errorContainer,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _error!,
+                      style: TextStyle(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onErrorContainer),
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.close,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onErrorContainer),
+                    onPressed: () => setState(() => _error = null),
+                    tooltip: 'Dismiss',
+                  ),
+                ],
               ),
             ),
-          const SizedBox(height: 12),
-          _buildDocumentTypeSelector(),
-          const SizedBox(height: 12),
-          _buildToggleCard(),
-          const SizedBox(height: 12),
-          _buildAdvancedOptionsCard(),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _filenameController,
-            decoration: const InputDecoration(
-              labelText: 'Override filename for this experiment',
-              prefixIcon: Icon(Icons.drive_file_move),
-            ),
           ),
-          const SizedBox(height: 16),
-          _buildActionButtons(),
-          const SizedBox(height: 24),
-          if (_lastResult != null)
-            ScanResultDetails(
-              result: _lastResult!,
-              showPreviewButton: true,
-              onPreview: () {
-                final doc = _lastResult!.document;
-                if (doc != null) {
-                  _openPreview(doc);
-                }
-              },
-            )
-          else
-            const EmptyState(
-              icon: Icons.tune,
-              title: 'Experiment results appear here',
-              message: 'Capture via camera or import a file to see how each toggle affects the output.',
-            ),
+        const SizedBox(height: 12),
+        _buildDocumentTypeSelector(),
+        const SizedBox(height: 12),
+        _buildToggleCard(),
+        const SizedBox(height: 12),
+        _buildAdvancedOptionsCard(),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _filenameController,
+          decoration: const InputDecoration(
+            labelText: 'Override filename for this experiment',
+            prefixIcon: Icon(Icons.drive_file_move),
+          ),
+        ),
+        const SizedBox(height: 16),
+        _buildActionButtons(),
+        const SizedBox(height: 24),
+        if (_lastResult != null)
+          ScanResultDetails(
+            result: _lastResult!,
+            showPreviewButton: true,
+            onPreview: () {
+              final doc = _lastResult!.document;
+              if (doc != null) openPdfPreview(context, doc);
+            },
+          )
+        else
+          const EmptyState(
+            icon: Icons.tune,
+            title: 'Experiment results appear here',
+            message:
+                'Capture via camera or import a file to see how each toggle affects the output.',
+          ),
         const SizedBox(height: 32),
       ],
     );
   }
 
   Widget _buildDocumentTypeSelector() {
-    const options = [DocumentType.document, DocumentType.manual, DocumentType.receipt, DocumentType.other];
+    const options = [
+      DocumentType.document,
+      DocumentType.manual,
+      DocumentType.receipt,
+      DocumentType.other,
+    ];
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Document type', style: Theme.of(context).textTheme.titleMedium),
+            Text('Document type',
+                style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               children: options
-                  .map(
-                    (option) => ChoiceChip(
-                      label: Text(option.name),
-                      selected: _documentType == option,
-                      onSelected: (selected) {
-                        if (selected) setState(() => _documentType = option);
-                      },
-                    ),
-                  )
+                  .map((option) => ChoiceChip(
+                        label: Text(option.name),
+                        selected: _documentType == option,
+                        onSelected: (selected) {
+                          if (selected) {
+                            setState(() => _documentType = option);
+                          }
+                        },
+                      ))
                   .toList(),
             ),
           ],
@@ -166,13 +191,15 @@ class _CapabilitiesLabScreenState extends State<CapabilitiesLabScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Compression quality (${(_compression * 100).round()}%)'),
+                Text(
+                    'Compression quality (${(_compression * 100).round()}%)'),
                 Slider(
                   value: _compression,
                   min: 0.4,
                   max: 1.0,
                   divisions: 6,
-                  onChanged: (value) => setState(() => _compression = value),
+                  onChanged: (value) =>
+                      setState(() => _compression = value),
                 ),
               ],
             ),
@@ -197,7 +224,8 @@ class _CapabilitiesLabScreenState extends State<CapabilitiesLabScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('PDF resolution & format', style: Theme.of(context).textTheme.titleMedium),
+            Text('PDF resolution & format',
+                style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 12),
             Row(
               children: [
@@ -222,7 +250,9 @@ class _CapabilitiesLabScreenState extends State<CapabilitiesLabScreen> {
     return [
       Chip(label: Text(_grayscale ? 'Grayscale' : 'Color')),
       Chip(label: Text(_contrast ? 'Contrast +' : 'Contrast off')),
-      Chip(label: Text('Compression ${(_compression * 100).round()}%')),
+      Chip(
+          label:
+              Text('Compression ${(_compression * 100).round()}%')),
       Chip(label: Text('Resolution ${_resolution.name}')),
       Chip(label: Text(_saveImage ? 'PDF + image' : 'PDF only')),
       Chip(label: Text('Format ${_format.name}')),
@@ -240,17 +270,13 @@ class _CapabilitiesLabScreenState extends State<CapabilitiesLabScreen> {
           value: _resolution,
           isExpanded: true,
           items: PdfResolution.values
-              .map(
-                (res) => DropdownMenuItem(
-                  value: res,
-                  child: Text(res.name),
-                ),
-              )
+              .map((res) => DropdownMenuItem(
+                    value: res,
+                    child: Text(res.name),
+                  ))
               .toList(),
           onChanged: (value) {
-            if (value != null) {
-              setState(() => _resolution = value);
-            }
+            if (value != null) setState(() => _resolution = value);
           },
         ),
       ),
@@ -268,17 +294,13 @@ class _CapabilitiesLabScreenState extends State<CapabilitiesLabScreen> {
           value: _format,
           isExpanded: true,
           items: formats
-              .map(
-                (format) => DropdownMenuItem(
-                  value: format,
-                  child: Text(format.name),
-                ),
-              )
+              .map((format) => DropdownMenuItem(
+                    value: format,
+                    child: Text(format.name),
+                  ))
               .toList(),
           onChanged: (value) {
-            if (value != null) {
-              setState(() => _format = value);
-            }
+            if (value != null) setState(() => _format = value);
           },
         ),
       ),
@@ -290,30 +312,48 @@ class _CapabilitiesLabScreenState extends State<CapabilitiesLabScreen> {
       children: [
         Expanded(
           child: FilledButton.icon(
-            onPressed: _isProcessing ? null : () => _runExperiment(useCamera: true),
-            icon: _isProcessing
-                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+            onPressed:
+                _isBusy ? null : () => _runExperiment(useCamera: true),
+            icon: _activeAction == _LabAction.camera
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.camera),
-            label: Text(_isProcessing ? 'Processing…' : 'Capture with camera'),
+            label: Text(_activeAction == _LabAction.camera
+                ? 'Capturing…'
+                : 'Camera'),
           ),
         ),
         const SizedBox(width: 12),
         Expanded(
           child: OutlinedButton.icon(
-            onPressed: _isProcessing ? null : () => _runExperiment(useCamera: false),
-            icon: const Icon(Icons.photo_library),
-            label: const Text('Import from gallery'),
+            onPressed:
+                _isBusy ? null : () => _runExperiment(useCamera: false),
+            icon: _activeAction == _LabAction.gallery
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.photo_library),
+            label: Text(_activeAction == _LabAction.gallery
+                ? 'Importing…'
+                : 'Gallery'),
           ),
         ),
         const SizedBox(width: 12),
         IconButton.outlined(
-          onPressed: _isProcessing ? null : _resetToDefaults,
+          onPressed: _isBusy ? null : _resetToDefaults,
           icon: const Icon(Icons.refresh),
           tooltip: 'Reset all options to defaults',
         ),
       ],
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // Actions
+  // ---------------------------------------------------------------------------
 
   void _resetToDefaults() {
     setState(() {
@@ -334,7 +374,8 @@ class _CapabilitiesLabScreenState extends State<CapabilitiesLabScreen> {
 
   Future<void> _runExperiment({required bool useCamera}) async {
     setState(() {
-      _isProcessing = true;
+      _activeAction =
+          useCamera ? _LabAction.camera : _LabAction.gallery;
       _error = null;
     });
 
@@ -355,13 +396,15 @@ class _CapabilitiesLabScreenState extends State<CapabilitiesLabScreen> {
     try {
       ScanResult result;
       if (useCamera) {
-        result = await DocumentScannerService().scanDocumentWithProcessing(
+        result =
+            await DocumentScannerService().scanDocumentWithProcessing(
           documentType: _documentType,
           processingOptions: options,
           customFilename: filename,
         );
       } else {
-        result = await DocumentScannerService().importDocumentWithProcessing(
+        result = await DocumentScannerService()
+            .importDocumentWithProcessing(
           documentType: _documentType,
           processingOptions: options,
           customFilename: filename,
@@ -375,39 +418,16 @@ class _CapabilitiesLabScreenState extends State<CapabilitiesLabScreen> {
 
       if (!result.success) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result.error ?? 'Experiment returned an error.')),
+          SnackBar(
+              content: Text(
+                  result.error ?? 'Experiment returned an error.')),
         );
       }
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = 'Experiment failed: $e');
     } finally {
-      if (mounted) {
-        setState(() => _isProcessing = false);
-      }
+      if (mounted) setState(() => _activeAction = _LabAction.none);
     }
-  }
-
-  Future<void> _openPreview(ScannedDocument document) async {
-    Uint8List? pdfData = document.pdfData;
-    if (pdfData == null && document.pdfPath != null) {
-      final file = File(document.pdfPath!);
-      if (await file.exists()) {
-        pdfData = await file.readAsBytes();
-      }
-    }
-    if (!mounted) return;
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (previewContext) => PdfPreviewWidget(
-          pdfData: pdfData,
-          pdfPath: document.pdfPath,
-          title: 'Capabilities preview',
-          onConfirm: () => Navigator.pop(previewContext),
-          onCancel: () => Navigator.pop(previewContext),
-        ),
-      ),
-    );
   }
 }

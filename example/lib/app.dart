@@ -6,20 +6,18 @@ import 'screens/pdf_preview_screen.dart';
 import 'screens/single_page_screen.dart';
 import 'state/showcase_state.dart';
 
-enum _ShowcaseTab {
-  quickScan,
-  multiScan,
-  lab,
-}
+enum _ShowcaseTab { quickScan, multiScan, lab }
 
 class DocumentScannerShowcaseApp extends StatefulWidget {
   const DocumentScannerShowcaseApp({super.key});
 
   @override
-  State<DocumentScannerShowcaseApp> createState() => _DocumentScannerShowcaseAppState();
+  State<DocumentScannerShowcaseApp> createState() =>
+      _DocumentScannerShowcaseAppState();
 }
 
-class _DocumentScannerShowcaseAppState extends State<DocumentScannerShowcaseApp> {
+class _DocumentScannerShowcaseAppState
+    extends State<DocumentScannerShowcaseApp> {
   late final ShowcaseState _state;
   int _currentIndex = 0;
 
@@ -48,8 +46,10 @@ class _DocumentScannerShowcaseAppState extends State<DocumentScannerShowcaseApp>
         routes: {
           SinglePageScreen.routeName: (_) => const SinglePageScreen(),
           MultiPageScreen.routeName: (_) => const MultiPageScreen(),
-          PdfPreviewShowcaseScreen.routeName: (_) => const PdfPreviewShowcaseScreen(),
-          CapabilitiesLabScreen.routeName: (_) => const CapabilitiesLabScreen(),
+          PdfPreviewShowcaseScreen.routeName: (_) =>
+              const PdfPreviewShowcaseScreen(),
+          CapabilitiesLabScreen.routeName: (_) =>
+              const CapabilitiesLabScreen(),
         },
         home: _TabNavigationShell(
           currentIndex: _currentIndex,
@@ -72,67 +72,59 @@ class _TabNavigationShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Column(
-        children: [
-          // Shared configuration header
-          Expanded(
-            child: IndexedStack(
-              index: currentIndex,
-              children: _ShowcaseTab.values.map((tab) => _buildTabContent(tab)).toList(),
-            ),
-          ),
+      body: IndexedStack(
+        index: currentIndex,
+        children: const [
+          SinglePageScreen(),
+          MultiPageScreen(),
+          CapabilitiesLabScreen(),
         ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: currentIndex,
         onDestinationSelected: onTabSelected,
-        destinations: _ShowcaseTab.values.map((tab) => _buildDestination(tab)).toList(),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.flash_on_outlined),
+            selectedIcon: Icon(Icons.flash_on),
+            label: 'Quick Scan',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.camera_alt_outlined),
+            selectedIcon: Icon(Icons.camera_alt),
+            label: 'Multi Scan',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.science_outlined),
+            selectedIcon: Icon(Icons.science),
+            label: 'Lab',
+          ),
+        ],
       ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: FloatingActionButton.small(
         onPressed: () => _showActionMenu(context),
         child: const Icon(Icons.more_vert),
       ),
     );
   }
 
-  NavigationDestination _buildDestination(_ShowcaseTab tab) {
-    switch (tab) {
-      case _ShowcaseTab.quickScan:
-        return const NavigationDestination(
-          icon: Icon(Icons.flash_on),
-          label: 'Quick Scan',
-          selectedIcon: Icon(Icons.flash_on_outlined),
-        );
-      case _ShowcaseTab.multiScan:
-        return const NavigationDestination(
-          icon: Icon(Icons.camera_alt),
-          label: 'Multi Scan',
-          selectedIcon: Icon(Icons.camera_alt_outlined),
-        );
-      case _ShowcaseTab.lab:
-        return const NavigationDestination(
-          icon: Icon(Icons.science),
-          label: 'Lab',
-          selectedIcon: Icon(Icons.science_outlined),
-        );
-    }
-  }
-
-  Widget _buildTabContent(_ShowcaseTab tab) {
-    switch (tab) {
-      case _ShowcaseTab.quickScan:
-        return const _SinglePageTab();
-      case _ShowcaseTab.multiScan:
-        return const _MultiPageTab();
-      case _ShowcaseTab.lab:
-        return const _CapabilitiesLabTab();
-    }
-  }
-
   void _showActionMenu(BuildContext context) {
+    final button = context.findRenderObject() as RenderBox?;
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    final screenSize = MediaQuery.sizeOf(context);
+
+    final position = button != null && overlay != null
+        ? RelativeRect.fromRect(
+            button.localToGlobal(Offset.zero) & button.size,
+            Offset.zero & overlay.size,
+          )
+        : RelativeRect.fromLTRB(
+            screenSize.width - 200, screenSize.height - 200, 16, 80);
+
     showMenu(
       context: context,
-      position: const RelativeRect.fromLTRB(100, 100, 0, 0),
+      position: position,
       items: [
         PopupMenuItem(
           onTap: () => _showConfigurationDialog(context),
@@ -173,32 +165,9 @@ class _TabNavigationShell extends StatelessWidget {
   }
 }
 
-class _SinglePageTab extends StatelessWidget {
-  const _SinglePageTab();
-
-  @override
-  Widget build(BuildContext context) {
-    return const SinglePageScreen();
-  }
-}
-
-class _MultiPageTab extends StatelessWidget {
-  const _MultiPageTab();
-
-  @override
-  Widget build(BuildContext context) {
-    return const MultiPageScreen();
-  }
-}
-
-class _CapabilitiesLabTab extends StatelessWidget {
-  const _CapabilitiesLabTab();
-
-  @override
-  Widget build(BuildContext context) {
-    return const CapabilitiesLabScreen();
-  }
-}
+// ---------------------------------------------------------------------------
+// Configuration dialog
+// ---------------------------------------------------------------------------
 
 class _ConfigurationDialog extends StatefulWidget {
   const _ConfigurationDialog();
@@ -208,17 +177,22 @@ class _ConfigurationDialog extends StatefulWidget {
 }
 
 class _ConfigurationDialogState extends State<_ConfigurationDialog> {
+  final _formKey = GlobalKey<FormState>();
   late TextEditingController _appNameController;
   late TextEditingController _directoryController;
   late TextEditingController _filenameController;
+
+  static final _unsafeChars = RegExp(r'[<>:"/\\|?*]');
 
   @override
   void initState() {
     super.initState();
     final state = ShowcaseStateScope.read(context);
     _appNameController = TextEditingController(text: state.appName);
-    _directoryController = TextEditingController(text: state.customDirectory ?? '');
-    _filenameController = TextEditingController(text: state.defaultFilename ?? '');
+    _directoryController =
+        TextEditingController(text: state.customDirectory ?? '');
+    _filenameController =
+        TextEditingController(text: state.defaultFilename ?? '');
   }
 
   @override
@@ -232,47 +206,76 @@ class _ConfigurationDialogState extends State<_ConfigurationDialog> {
   @override
   Widget build(BuildContext context) {
     final state = ShowcaseStateScope.watch(context);
-    
+
     return AlertDialog(
       title: const Text('Storage Configuration'),
-      content: SizedBox(
-        width: 400,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _appNameController,
-              decoration: const InputDecoration(
-                labelText: 'App name',
-                prefixIcon: Icon(Icons.apps),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 400),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: _appNameController,
+                decoration: const InputDecoration(
+                  labelText: 'App name',
+                  prefixIcon: Icon(Icons.apps),
+                  helperText: 'Letters, numbers, hyphens, underscores',
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'App name cannot be empty';
+                  }
+                  if (_unsafeChars.hasMatch(value)) {
+                    return 'Contains invalid characters';
+                  }
+                  return null;
+                },
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _directoryController,
-              decoration: const InputDecoration(
-                labelText: 'Custom storage directory (optional)',
-                hintText: '/storage/emulated/0/Documents/MyApp',
-                prefixIcon: Icon(Icons.folder),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _filenameController,
-              decoration: const InputDecoration(
-                labelText: 'Default custom filename (optional)',
-                hintText: 'project-proposal',
-                prefixIcon: Icon(Icons.description_outlined),
-              ),
-            ),
-            if (state.lastConfigSummary != null) ...[
               const SizedBox(height: 12),
-              Text(
-                state.lastConfigSummary!,
-                style: Theme.of(context).textTheme.bodySmall,
+              TextFormField(
+                controller: _directoryController,
+                decoration: const InputDecoration(
+                  labelText: 'Custom storage directory (optional)',
+                  hintText: '/storage/emulated/0/Documents/MyApp',
+                  prefixIcon: Icon(Icons.folder),
+                ),
+                validator: (value) {
+                  if (value != null &&
+                      value.trim().isNotEmpty &&
+                      !value.trim().startsWith('/')) {
+                    return 'Must be an absolute path (starts with /)';
+                  }
+                  return null;
+                },
               ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _filenameController,
+                decoration: const InputDecoration(
+                  labelText: 'Default filename (optional)',
+                  hintText: 'project-proposal',
+                  prefixIcon: Icon(Icons.description_outlined),
+                ),
+                validator: (value) {
+                  if (value != null &&
+                      value.trim().isNotEmpty &&
+                      _unsafeChars.hasMatch(value)) {
+                    return 'Contains invalid characters';
+                  }
+                  return null;
+                },
+              ),
+              if (state.lastConfigSummary != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  state.lastConfigSummary!,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
       actions: [
@@ -294,11 +297,13 @@ class _ConfigurationDialogState extends State<_ConfigurationDialog> {
         ),
         FilledButton(
           onPressed: () {
+            if (!_formKey.currentState!.validate()) return;
             ShowcaseStateScope.read(context).configureStorage(
               appName: _appNameController.text,
               customDirectory: _directoryController.text,
             );
-            ShowcaseStateScope.read(context).setDefaultFilename(_filenameController.text);
+            ShowcaseStateScope.read(context)
+                .setDefaultFilename(_filenameController.text);
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Storage configuration applied')),
             );
@@ -311,88 +316,106 @@ class _ConfigurationDialogState extends State<_ConfigurationDialog> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// History dialog
+// ---------------------------------------------------------------------------
+
 class _HistoryDialog extends StatelessWidget {
   const _HistoryDialog();
 
   IconData _flowIcon(String flow) {
-    switch (flow) {
-      case 'Single Page Capture':
-        return Icons.document_scanner;
-      case 'Multi-Page Session':
-        return Icons.menu_book;
-      case 'Capabilities Lab':
-        return Icons.science;
-      default:
-        return Icons.history;
+    if (flow.contains('Single') || flow.contains('Camera') || flow.contains('Gallery')) {
+      return Icons.document_scanner;
     }
+    if (flow.contains('Multi')) return Icons.menu_book;
+    if (flow.contains('Lab') || flow.contains('Capabilities')) {
+      return Icons.science;
+    }
+    return Icons.history;
   }
 
   @override
   Widget build(BuildContext context) {
     final state = ShowcaseStateScope.watch(context);
-    
+    final screenHeight = MediaQuery.sizeOf(context).height;
+
     return AlertDialog(
       title: const Text('Scan History'),
-      content: SizedBox(
-        width: 500,
-        height: 400,
-        child: state.history.isEmpty
-            ? const Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.hourglass_empty, size: 48),
-                    SizedBox(height: 16),
-                    Text('No scans yet'),
-                    Text('Run any showcase flow to populate this timeline.'),
-                  ],
-                ),
-              )
-            : ListView.builder(
-                itemCount: state.history.length,
-                itemBuilder: (context, index) {
-                  final log = state.history[index];
-                  final doc = log.result.document;
-                  return Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(_flowIcon(log.flow), color: Theme.of(context).colorScheme.primary),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  log.flow,
-                                  style: Theme.of(context).textTheme.titleMedium,
+      content: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 500,
+          maxHeight: screenHeight * 0.55,
+        ),
+        child: SizedBox(
+          width: double.maxFinite,
+          child: state.history.isEmpty
+              ? const Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.hourglass_empty, size: 48),
+                      SizedBox(height: 16),
+                      Text('No scans yet'),
+                      SizedBox(height: 4),
+                      Text('Run any flow to populate this timeline.'),
+                    ],
+                  ),
+                )
+              : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: state.history.length,
+                  itemBuilder: (context, index) {
+                    final log = state.history[index];
+                    final doc = log.result.document;
+                    final colorScheme = Theme.of(context).colorScheme;
+                    return Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(_flowIcon(log.flow),
+                                    color: colorScheme.primary),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    log.flow,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium,
+                                  ),
                                 ),
-                              ),
-                              if (log.result.success)
-                                const Icon(Icons.check_circle, color: Colors.green)
-                              else
-                                const Icon(Icons.error, color: Colors.red),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Completed at ${log.timestamp.toLocal()}',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                          if (doc != null) ...[
+                                Icon(
+                                  log.result.success
+                                      ? Icons.check_circle
+                                      : Icons.error,
+                                  color: log.result.success
+                                      ? colorScheme.primary
+                                      : colorScheme.error,
+                                ),
+                              ],
+                            ),
                             const SizedBox(height: 4),
                             Text(
-                              'Pages: ${doc.pages.length}',
+                              _formatTimestamp(log.timestamp),
                               style: Theme.of(context).textTheme.bodySmall,
                             ),
+                            if (doc != null) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                'Pages: ${doc.isMultiPage ? doc.pages.length : 1}',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
-                    ),
-                  );
-                },
-              ),
+                    );
+                  },
+                ),
+        ),
       ),
       actions: [
         TextButton(
@@ -401,5 +424,15 @@ class _HistoryDialog extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  String _formatTimestamp(DateTime ts) {
+    final h = ts.hour.toString().padLeft(2, '0');
+    final m = ts.minute.toString().padLeft(2, '0');
+    final now = DateTime.now();
+    if (ts.year == now.year && ts.month == now.month && ts.day == now.day) {
+      return 'Today $h:$m';
+    }
+    return '${ts.day}/${ts.month} $h:$m';
   }
 }

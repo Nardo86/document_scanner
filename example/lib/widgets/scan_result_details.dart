@@ -6,7 +6,12 @@ class ScanResultDetails extends StatelessWidget {
   final VoidCallback? onPreview;
   final bool showPreviewButton;
 
-  const ScanResultDetails({super.key, required this.result, this.onPreview, this.showPreviewButton = false});
+  const ScanResultDetails({
+    super.key,
+    required this.result,
+    this.onPreview,
+    this.showPreviewButton = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -21,7 +26,8 @@ class ScanResultDetails extends StatelessWidget {
               children: [
                 ResultStatusChip(result: result),
                 const SizedBox(width: 12),
-                Text(result.type.name.toUpperCase(), style: Theme.of(context).textTheme.bodySmall),
+                Text(result.type.name.toUpperCase(),
+                    style: Theme.of(context).textTheme.bodySmall),
                 const Spacer(),
                 Text(
                   result.success ? 'Success' : 'Failed',
@@ -31,16 +37,27 @@ class ScanResultDetails extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             if (document == null)
-              Text(result.error ?? 'No document was produced', style: Theme.of(context).textTheme.bodyMedium)
+              Text(result.error ?? 'No document was produced',
+                  style: Theme.of(context).textTheme.bodyMedium)
             else ...[
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: [
                   Chip(label: Text('Type: ${document.type.name}')),
-                  Chip(label: Text(document.isMultiPage ? '${document.pages.length} pages' : 'Single page')),
-                  Chip(label: Text(document.pdfPath != null ? 'PDF saved' : 'PDF pending')),
-                  Chip(label: Text(document.processingOptions.generatePdf ? 'PDF output' : 'No PDF')),
+                  Chip(
+                      label: Text(document.isMultiPage
+                          ? '${document.pages.length} pages'
+                          : 'Single page')),
+                  Chip(
+                      label: Text(document.pdfPath != null
+                          ? 'PDF saved'
+                          : 'PDF pending')),
+                  Chip(
+                      label: Text(
+                          document.processingOptions.generatePdf
+                              ? 'PDF output'
+                              : 'No PDF')),
                 ],
               ),
               const SizedBox(height: 12),
@@ -54,7 +71,8 @@ class ScanResultDetails extends StatelessWidget {
                     fit: BoxFit.cover,
                   ),
                 )
-              else if (document.pages.isNotEmpty && document.pages.first.processedImageData != null)
+              else if (document.pages.isNotEmpty &&
+                  document.pages.first.processedImageData != null)
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),
                   child: Image.memory(
@@ -66,24 +84,44 @@ class ScanResultDetails extends StatelessWidget {
                 ),
               const SizedBox(height: 12),
               _buildPathTile(context, 'PDF path', document.pdfPath),
-              _buildPathTile(context, 'Processed image path', document.processedPath),
-              _buildPathTile(context, 'Original capture', document.originalPath),
+              _buildPathTile(context, 'Processed image path',
+                  document.processedPath),
+              _buildPathTile(context, 'Original capture',
+                  document.originalPath),
               const SizedBox(height: 12),
-              Text('Metadata', style: Theme.of(context).textTheme.titleMedium),
+              Text('Metadata',
+                  style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
               MetadataList(metadata: document.metadata),
               const SizedBox(height: 12),
-              Text('Processing options', style: Theme.of(context).textTheme.titleMedium),
+              Text('Processing options',
+                  style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  Chip(label: Text(document.processingOptions.convertToGrayscale ? 'Grayscale' : 'Color')),
-                  Chip(label: Text(document.processingOptions.enhanceContrast ? 'Contrast +' : 'Contrast off')),
-                  Chip(label: Text('Compression ${(document.processingOptions.compressionQuality * 100).round()}%')),
-                  Chip(label: Text(document.processingOptions.pdfResolution.name)),
-                  Chip(label: Text(document.processingOptions.saveImageFile ? 'PDF + image' : 'PDF only')),
+                  Chip(
+                      label: Text(
+                          document.processingOptions.convertToGrayscale
+                              ? 'Grayscale'
+                              : 'Color')),
+                  Chip(
+                      label: Text(
+                          document.processingOptions.enhanceContrast
+                              ? 'Contrast +'
+                              : 'Contrast off')),
+                  Chip(
+                      label: Text(
+                          'Compression ${(document.processingOptions.compressionQuality * 100).round()}%')),
+                  Chip(
+                      label: Text(document
+                          .processingOptions.pdfResolution.name)),
+                  Chip(
+                      label: Text(
+                          document.processingOptions.saveImageFile
+                              ? 'PDF + image'
+                              : 'PDF only')),
                 ],
               ),
               if (showPreviewButton && onPreview != null) ...[
@@ -104,7 +142,8 @@ class ScanResultDetails extends StatelessWidget {
     );
   }
 
-  Widget _buildPathTile(BuildContext context, String label, String? value) {
+  Widget _buildPathTile(
+      BuildContext context, String label, String? value) {
     if (value == null || value.isEmpty) {
       return const SizedBox.shrink();
     }
@@ -113,11 +152,15 @@ class ScanResultDetails extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: Theme.of(context).textTheme.bodySmall),
+          Text(label,
+              style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 4),
           SelectableText(
             value,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontFamily: 'monospace'),
+            style: Theme.of(context)
+                .textTheme
+                .bodyMedium
+                ?.copyWith(fontFamily: 'monospace'),
           ),
         ],
       ),
@@ -133,7 +176,8 @@ class MetadataList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (metadata.isEmpty) {
-      return Text('No metadata available', style: Theme.of(context).textTheme.bodySmall);
+      return Text('No metadata available',
+          style: Theme.of(context).textTheme.bodySmall);
     }
     return Column(
       children: metadata.entries
@@ -157,16 +201,17 @@ class ResultStatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     late Color color;
     late String label;
     if (result.success) {
-      color = Colors.green;
+      color = colorScheme.primary;
       label = 'Success';
     } else if (result.error == 'User cancelled operation') {
-      color = Colors.orange;
+      color = colorScheme.tertiary;
       label = 'Cancelled';
     } else {
-      color = Colors.red;
+      color = colorScheme.error;
       label = 'Error';
     }
     return Chip(

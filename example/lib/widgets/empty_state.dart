@@ -4,8 +4,15 @@ class EmptyState extends StatelessWidget {
   final IconData icon;
   final String title;
   final String message;
+  final Widget? action;
 
-  const EmptyState({super.key, required this.icon, required this.title, required this.message});
+  const EmptyState({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.message,
+    this.action,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -18,7 +25,9 @@ class EmptyState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 48, color: Theme.of(context).colorScheme.primary),
+          Icon(icon,
+              size: 48,
+              color: Theme.of(context).colorScheme.primary),
           const SizedBox(height: 12),
           Text(
             title,
@@ -30,6 +39,10 @@ class EmptyState extends StatelessWidget {
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodyMedium,
           ),
+          if (action != null) ...[
+            const SizedBox(height: 16),
+            action!,
+          ],
         ],
       ),
     );
