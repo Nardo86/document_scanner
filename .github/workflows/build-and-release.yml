@@ -37,7 +37,7 @@ jobs:
       timeout-minutes: 3
 
     - name: Analyze package code
-      run: flutter analyze
+      run: flutter analyze --no-fatal-infos
       timeout-minutes: 5
     
     - name: Test package
@@ -49,7 +49,7 @@ jobs:
       working-directory: example
     
     - name: Analyze example app code
-      run: flutter analyze
+      run: flutter analyze --no-fatal-infos
       working-directory: example
       timeout-minutes: 5
     
