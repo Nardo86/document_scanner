@@ -37,6 +37,8 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
   Uint8List? _previewImageData;
   Uint8List?
   _baseImageData; // Image after rotation/crop but before color filters
+  Uint8List?
+  _preCropBaseData; // Image before the last crop (for re-editing crop)
   List<Offset>? _detectedCorners;
   bool _isProcessing = false;
   bool _showCropOverlay = false;
@@ -192,6 +194,7 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
       setState(() {
         _baseImageData = rotatedData;
         _previewImageData = previewData;
+        _preCropBaseData = null; // Rotation invalidates pre-crop state
         _isProcessing = false;
       });
     } catch (e) {
@@ -275,13 +278,15 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
     });
 
     try {
-      // Crop the current base image (corners match the displayed image)
+      // Crop from the pre-crop image (if re-editing) or current base
+      final sourceData = _preCropBaseData ?? _baseImageData!;
+
       final cropOptions = ImageEditingOptions(
         cropCorners: _detectedCorners,
         documentFormat: _editingOptions.documentFormat,
       );
       final croppedData = await _imageProcessor.applyImageEditing(
-        _baseImageData!,
+        sourceData,
         cropOptions,
       );
 
@@ -298,6 +303,8 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
       }
 
       setState(() {
+        // Save pre-crop state for re-editing (only first time)
+        _preCropBaseData ??= _baseImageData;
         _previewImageData = previewData;
         _baseImageData = croppedData;
         _showCropOverlay = false;
@@ -306,6 +313,7 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
         );
         _isProcessing = false;
       });
+      // Keep _detectedCorners as-is so user can re-edit them
     } catch (e) {
       setState(() {
         _isProcessing = false;
@@ -321,6 +329,7 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
       _editingOptions = const ImageEditingOptions();
       _previewImageData = widget.initialPreviewData ?? widget.imageData;
       _baseImageData = widget.initialPreviewData ?? widget.imageData;
+      _preCropBaseData = null;
       _showCropOverlay = false;
     });
   }
@@ -377,7 +386,10 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
                     : _previewImageData != null
                     ? _showCropOverlay && _detectedCorners != null
                           ? CropOverlayWidget(
-                              imageData: _baseImageData ?? widget.imageData,
+                              imageData:
+                                  _preCropBaseData ??
+                                  _baseImageData ??
+                                  widget.imageData,
                               corners: _detectedCorners!,
                               onCornersChanged: (newCorners) {
                                 setState(() {
