@@ -1,121 +1,115 @@
 import 'dart:io';
 import 'dart:typed_data';
-import 'package:path_provider/path_provider.dart';
+import 'package:path_provider/path_provider.dart' as pp;
 import 'package:path/path.dart' as path;
 import '../models/scanned_document.dart';
 
-/// Configuration for storage operations
+/// Configuration for storage operations.
 class StorageConfig {
   final String? customDirectory;
   final String? appName;
 
-  const StorageConfig({
-    this.customDirectory,
-    this.appName,
-  });
+  const StorageConfig({this.customDirectory, this.appName});
 }
 
-/// Lightweight helper for storage operations
-/// Handles directory creation, file naming, and file saving
+/// Lightweight helper for directory creation, filename generation, and file I/O.
 class StorageHelper {
   StorageConfig _config = const StorageConfig();
 
-  /// Configure storage settings
+  /// Apply storage configuration.
   void configure(StorageConfig config) {
     _config = config;
   }
 
-  /// Get the configured external storage directory
+  /// Return the configured external storage directory, creating it if needed.
+  ///
+  /// Resolution order:
+  /// 1. [StorageConfig.customDirectory] (explicit path)
+  /// 2. Android: `<external-storage>/Documents/<appName>`
+  /// 3. iOS / other: application documents directory
   Future<Directory> getExternalStorageDirectory() async {
-    if (Platform.isAndroid) {
-      if (_config.customDirectory != null) {
-        final directory = Directory(_config.customDirectory!);
-        if (!await directory.exists()) {
-          await directory.create(recursive: true);
-        }
-        return directory;
-      } else {
-        final appName = _config.appName ?? 'DocumentScanner';
-        final basePath = '/storage/emulated/0/Documents';
-        final directory = Directory(path.join(basePath, appName));
-        if (!await directory.exists()) {
-          await directory.create(recursive: true);
-        }
-        return directory;
-      }
-    } else {
-      if (_config.customDirectory != null) {
-        final directory = Directory(_config.customDirectory!);
-        if (!await directory.exists()) {
-          await directory.create(recursive: true);
-        }
-        return directory;
-      } else {
-        return await getApplicationDocumentsDirectory();
-      }
+    if (_config.customDirectory != null) {
+      return _ensureDirectory(_config.customDirectory!);
     }
+
+    if (Platform.isAndroid) {
+      // Prefer the platform-provided external storage directory. Fall back to
+      // the well-known /storage/emulated/0/Documents path only when the
+      // platform helper returns null (which should not happen on modern
+      // Android, but guards against edge cases).
+      final extDir = await pp.getExternalStorageDirectory();
+      final appName = _config.appName ?? 'DocumentScanner';
+
+      if (extDir != null) {
+        // path_provider returns app-specific external storage
+        // (e.g. /storage/emulated/0/Android/data/<pkg>/files).
+        // We go up to the shared Documents folder instead.
+        final docsPath = path.join(
+          extDir.parent.parent.parent.parent.path,
+          'Documents',
+          appName,
+        );
+        return _ensureDirectory(docsPath);
+      }
+
+      // Fallback
+      return _ensureDirectory('/storage/emulated/0/Documents/$appName');
+    }
+
+    // iOS / desktop / others
+    final appDir = await pp.getApplicationDocumentsDirectory();
+    return appDir;
   }
 
-  /// Generate filename based on document type, custom name, and metadata
+  /// Generate a filename based on type, metadata, and timestamp.
   String generateFilename({
     required DocumentType documentType,
     required DateTime timestamp,
     String? customFilename,
     Map<String, dynamic>? metadata,
   }) {
-    if (customFilename != null) {
-      return customFilename;
-    }
+    if (customFilename != null) return customFilename;
 
-    // Try to use suggested name from metadata first
-    if (metadata != null && metadata['suggestedFilename'] != null) {
-      return metadata['suggestedFilename'] as String;
-    }
-
-    // Try to build name from product details if available
     if (metadata != null) {
+      final suggested = metadata['suggestedFilename'] as String?;
+      if (suggested != null) return suggested;
+
       final brand = metadata['productBrand'] as String?;
       final model = metadata['productModel'] as String?;
-      final purchaseDate = metadata['purchaseDate'] as String?;
-
       if (brand != null && model != null) {
-        final dateStr = purchaseDate ?? _formatTimestampForFilename(timestamp);
-        final typeStr = _getDocumentTypeSuffix(documentType);
-        final cleanBrand = _cleanFilename(brand);
-        final cleanModel = _cleanFilename(model);
-        return '${dateStr}_${cleanBrand}_${cleanModel}_${typeStr}';
+        final dateStr =
+            (metadata['purchaseDate'] as String?) ?? _formatTimestamp(timestamp);
+        final typeStr = _typeSuffix(documentType);
+        return '${dateStr}_${_clean(brand)}_${_clean(model)}_$typeStr';
       }
     }
 
-    // Fallback to timestamp-based naming
-    final dateTimeStr = _formatTimestampForFilename(timestamp);
-    final typeStr = _getDocumentTypeSuffix(documentType);
-    return '${dateTimeStr}_${typeStr}';
+    return '${_formatTimestamp(timestamp)}_${_typeSuffix(documentType)}';
   }
 
-  /// Save image file to storage
+  /// Save an image file and return its absolute path.
   Future<String> saveImageFile({
     required Directory directory,
     required String filename,
     required Uint8List imageData,
   }) async {
-    final imageFile = File(path.join(directory.path, '$filename.jpg'));
-    await imageFile.writeAsBytes(imageData);
-    return imageFile.path;
+    final file = File(path.join(directory.path, '$filename.jpg'));
+    await file.writeAsBytes(imageData);
+    return file.path;
   }
 
-  /// Save PDF file to storage
+  /// Save a PDF file and return its absolute path.
   Future<String> savePdfFile({
     required Directory directory,
     required String filename,
     required Uint8List pdfData,
   }) async {
-    final pdfFile = File(path.join(directory.path, '$filename.pdf'));
-    await pdfFile.writeAsBytes(pdfData);
-    return pdfFile.path;
+    final file = File(path.join(directory.path, '$filename.pdf'));
+    await file.writeAsBytes(pdfData);
+    return file.path;
   }
 
-  /// Save both image and PDF files
+  /// Save both image and PDF files. Returns a map with `'image'` and `'pdf'` keys.
   Future<Map<String, String>> saveFiles({
     required Directory directory,
     required String filename,
@@ -123,30 +117,36 @@ class StorageHelper {
     Uint8List? pdfData,
   }) async {
     final paths = <String, String>{};
-
     if (imageData != null) {
-      final imagePath = await saveImageFile(
+      paths['image'] = await saveImageFile(
         directory: directory,
         filename: filename,
         imageData: imageData,
       );
-      paths['image'] = imagePath;
     }
-
     if (pdfData != null) {
-      final pdfPath = await savePdfFile(
+      paths['pdf'] = await savePdfFile(
         directory: directory,
         filename: filename,
         pdfData: pdfData,
       );
-      paths['pdf'] = pdfPath;
     }
-
     return paths;
   }
 
-  /// Get document type suffix for filename
-  String _getDocumentTypeSuffix(DocumentType type) {
+  // ---------------------------------------------------------------------------
+  // Private helpers
+  // ---------------------------------------------------------------------------
+
+  Future<Directory> _ensureDirectory(String dirPath) async {
+    final directory = Directory(dirPath);
+    if (!await directory.exists()) {
+      await directory.create(recursive: true);
+    }
+    return directory;
+  }
+
+  String _typeSuffix(DocumentType type) {
     switch (type) {
       case DocumentType.receipt:
         return 'Receipt';
@@ -159,16 +159,14 @@ class StorageHelper {
     }
   }
 
-  /// Format timestamp for filename (yyyymmdd)
-  String _formatTimestampForFilename(DateTime timestamp) {
-    final year = timestamp.year.toString();
-    final month = timestamp.month.toString().padLeft(2, '0');
-    final day = timestamp.day.toString().padLeft(2, '0');
-    return '$year$month$day';
+  String _formatTimestamp(DateTime ts) {
+    final y = ts.year.toString();
+    final m = ts.month.toString().padLeft(2, '0');
+    final d = ts.day.toString().padLeft(2, '0');
+    return '$y$m$d';
   }
 
-  /// Clean filename by removing invalid characters
-  String _cleanFilename(String input) {
+  String _clean(String input) {
     return input
         .replaceAll(RegExp(r'[<>:"/\\|?*]'), '_')
         .replaceAll(RegExp(r'\s+'), '_')

@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/annotations.dart';
 import 'package:mockito/mockito.dart';
@@ -44,6 +45,54 @@ void main() {
     );
   });
 
+  // ---------------------------------------------------------------------------
+  // Helper: stub processImageWithAutoCrop to return a valid result map
+  // ---------------------------------------------------------------------------
+  void stubAutoCrop(Uint8List processedData) {
+    when(mockImageProcessor.processImageWithAutoCrop(any, any))
+        .thenAnswer((_) async => <String, dynamic>{
+              'processedImageData': processedData,
+              'detectedEdges': <Offset>[],
+              'metadata': <String, dynamic>{
+                'autoCrop': {'applied': false},
+              },
+            });
+  }
+
+  // Helper: stub the full save pipeline
+  void stubSavePipeline({
+    required Uint8List pdfData,
+    required String savedPdfPath,
+  }) {
+    when(mockPdfGenerator.generatePdf(
+      imageData: anyNamed('imageData'),
+      documentType: anyNamed('documentType'),
+      resolution: anyNamed('resolution'),
+      documentFormat: anyNamed('documentFormat'),
+      metadata: anyNamed('metadata'),
+    )).thenAnswer((_) async => pdfData);
+
+    when(mockStorageHelper.getExternalStorageDirectory())
+        .thenAnswer((_) async => Directory.systemTemp);
+
+    when(mockStorageHelper.generateFilename(
+      documentType: anyNamed('documentType'),
+      timestamp: anyNamed('timestamp'),
+      customFilename: anyNamed('customFilename'),
+      metadata: anyNamed('metadata'),
+    )).thenReturn('test_filename');
+
+    when(mockStorageHelper.savePdfFile(
+      directory: anyNamed('directory'),
+      filename: anyNamed('filename'),
+      pdfData: anyNamed('pdfData'),
+    )).thenAnswer((_) async => savedPdfPath);
+  }
+
+  // ---------------------------------------------------------------------------
+  // scanDocument
+  // ---------------------------------------------------------------------------
+
   group('DocumentScannerService - scanDocument', () {
     test('returns success with document when capture succeeds', () async {
       final mockImageData = Uint8List.fromList([1, 2, 3, 4]);
@@ -52,8 +101,13 @@ void main() {
         path: '/test/image.jpg',
       );
 
-      when(mockCameraService.captureFromCamera(imageQuality: anyNamed('imageQuality')))
+      when(mockCameraService.captureFromCamera(
+              imageQuality: anyNamed('imageQuality')))
           .thenAnswer((_) async => captureResult);
+
+      // processImageWithAutoCrop is called for auto-crop in editor path;
+      // it may throw (caught silently), so stub it to avoid noise.
+      stubAutoCrop(mockImageData);
 
       final result = await scannerService.scanDocument(
         documentType: DocumentType.receipt,
@@ -66,7 +120,8 @@ void main() {
     });
 
     test('returns cancelled result when user cancels capture', () async {
-      when(mockCameraService.captureFromCamera(imageQuality: anyNamed('imageQuality')))
+      when(mockCameraService.captureFromCamera(
+              imageQuality: anyNamed('imageQuality')))
           .thenAnswer((_) async => CaptureResult.cancelled());
 
       final result = await scannerService.scanDocument(
@@ -78,8 +133,10 @@ void main() {
     });
 
     test('returns error result when camera permission denied', () async {
-      when(mockCameraService.captureFromCamera(imageQuality: anyNamed('imageQuality')))
-          .thenAnswer((_) async => CaptureResult.error('Camera permission denied'));
+      when(mockCameraService.captureFromCamera(
+              imageQuality: anyNamed('imageQuality')))
+          .thenAnswer((_) async =>
+              CaptureResult.error('Camera permission denied'));
 
       final result = await scannerService.scanDocument(
         documentType: DocumentType.receipt,
@@ -94,38 +151,15 @@ void main() {
       final processedImageData = Uint8List.fromList([5, 6, 7, 8]);
       final pdfData = Uint8List.fromList([9, 10, 11, 12]);
 
-      when(mockCameraService.captureFromCamera(imageQuality: anyNamed('imageQuality')))
+      when(mockCameraService.captureFromCamera(
+              imageQuality: anyNamed('imageQuality')))
           .thenAnswer((_) async => CaptureResult.success(
                 imageData: mockImageData,
                 path: '/test/image.jpg',
               ));
 
-      when(mockImageProcessor.processImage(any, any))
-          .thenAnswer((_) async => processedImageData);
-
-      when(mockPdfGenerator.generatePdf(
-        imageData: anyNamed('imageData'),
-        documentType: anyNamed('documentType'),
-        resolution: anyNamed('resolution'),
-        documentFormat: anyNamed('documentFormat'),
-        metadata: anyNamed('metadata'),
-      )).thenAnswer((_) async => pdfData);
-
-      when(mockStorageHelper.getExternalStorageDirectory())
-          .thenAnswer((_) async => Directory.systemTemp);
-
-      when(mockStorageHelper.generateFilename(
-        documentType: anyNamed('documentType'),
-        timestamp: anyNamed('timestamp'),
-        customFilename: anyNamed('customFilename'),
-        metadata: anyNamed('metadata'),
-      )).thenReturn('test_receipt');
-
-      when(mockStorageHelper.savePdfFile(
-        directory: anyNamed('directory'),
-        filename: anyNamed('filename'),
-        pdfData: anyNamed('pdfData'),
-      )).thenAnswer((_) async => '/test/test_receipt.pdf');
+      stubAutoCrop(processedImageData);
+      stubSavePipeline(pdfData: pdfData, savedPdfPath: '/test/test_receipt.pdf');
 
       final result = await scannerService.scanDocument(
         documentType: DocumentType.receipt,
@@ -134,7 +168,7 @@ void main() {
 
       expect(result.success, true);
       expect(result.document!.pdfPath, '/test/test_receipt.pdf');
-      verify(mockImageProcessor.processImage(any, any)).called(1);
+      verify(mockImageProcessor.processImageWithAutoCrop(any, any)).called(1);
       verify(mockPdfGenerator.generatePdf(
         imageData: anyNamed('imageData'),
         documentType: anyNamed('documentType'),
@@ -145,6 +179,10 @@ void main() {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // importDocument
+  // ---------------------------------------------------------------------------
+
   group('DocumentScannerService - importDocument', () {
     test('returns success with document when import succeeds', () async {
       final mockImageData = Uint8List.fromList([1, 2, 3, 4]);
@@ -153,8 +191,11 @@ void main() {
         path: '/test/gallery.jpg',
       );
 
-      when(mockCameraService.importFromGallery(imageQuality: anyNamed('imageQuality')))
+      when(mockCameraService.importFromGallery(
+              imageQuality: anyNamed('imageQuality')))
           .thenAnswer((_) async => captureResult);
+
+      stubAutoCrop(mockImageData);
 
       final result = await scannerService.importDocument(
         documentType: DocumentType.document,
@@ -167,7 +208,8 @@ void main() {
     });
 
     test('returns cancelled result when user cancels import', () async {
-      when(mockCameraService.importFromGallery(imageQuality: anyNamed('imageQuality')))
+      when(mockCameraService.importFromGallery(
+              imageQuality: anyNamed('imageQuality')))
           .thenAnswer((_) async => CaptureResult.cancelled());
 
       final result = await scannerService.importDocument(
@@ -179,44 +221,26 @@ void main() {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // scanDocumentWithProcessing
+  // ---------------------------------------------------------------------------
+
   group('DocumentScannerService - scanDocumentWithProcessing', () {
     test('processes and saves document automatically', () async {
       final mockImageData = Uint8List.fromList([1, 2, 3, 4]);
       final processedImageData = Uint8List.fromList([5, 6, 7, 8]);
       final pdfData = Uint8List.fromList([9, 10, 11, 12]);
 
-      when(mockCameraService.captureFromCamera(imageQuality: anyNamed('imageQuality')))
+      when(mockCameraService.captureFromCamera(
+              imageQuality: anyNamed('imageQuality')))
           .thenAnswer((_) async => CaptureResult.success(
                 imageData: mockImageData,
                 path: '/test/image.jpg',
               ));
 
-      when(mockImageProcessor.processImage(any, any))
-          .thenAnswer((_) async => processedImageData);
-
-      when(mockPdfGenerator.generatePdf(
-        imageData: anyNamed('imageData'),
-        documentType: anyNamed('documentType'),
-        resolution: anyNamed('resolution'),
-        documentFormat: anyNamed('documentFormat'),
-        metadata: anyNamed('metadata'),
-      )).thenAnswer((_) async => pdfData);
-
-      when(mockStorageHelper.getExternalStorageDirectory())
-          .thenAnswer((_) async => Directory.systemTemp);
-
-      when(mockStorageHelper.generateFilename(
-        documentType: anyNamed('documentType'),
-        timestamp: anyNamed('timestamp'),
-        customFilename: anyNamed('customFilename'),
-        metadata: anyNamed('metadata'),
-      )).thenReturn('test_document');
-
-      when(mockStorageHelper.savePdfFile(
-        directory: anyNamed('directory'),
-        filename: anyNamed('filename'),
-        pdfData: anyNamed('pdfData'),
-      )).thenAnswer((_) async => '/test/test_document.pdf');
+      stubAutoCrop(processedImageData);
+      stubSavePipeline(
+          pdfData: pdfData, savedPdfPath: '/test/test_document.pdf');
 
       final result = await scannerService.scanDocumentWithProcessing(
         documentType: DocumentType.document,
@@ -229,6 +253,42 @@ void main() {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // importDocumentWithProcessing
+  // ---------------------------------------------------------------------------
+
+  group('DocumentScannerService - importDocumentWithProcessing', () {
+    test('imports and processes document automatically', () async {
+      final mockImageData = Uint8List.fromList([1, 2, 3, 4]);
+      final processedImageData = Uint8List.fromList([5, 6, 7, 8]);
+      final pdfData = Uint8List.fromList([9, 10, 11, 12]);
+
+      when(mockCameraService.importFromGallery(
+              imageQuality: anyNamed('imageQuality')))
+          .thenAnswer((_) async => CaptureResult.success(
+                imageData: mockImageData,
+                path: '/test/gallery.jpg',
+              ));
+
+      stubAutoCrop(processedImageData);
+      stubSavePipeline(
+          pdfData: pdfData, savedPdfPath: '/test/test_import.pdf');
+
+      final result = await scannerService.importDocumentWithProcessing(
+        documentType: DocumentType.document,
+      );
+
+      expect(result.success, true);
+      expect(result.document!.pdfPath, '/test/test_import.pdf');
+      expect(result.document!.metadata['autoProcessed'], true);
+      expect(result.document!.metadata['source'], 'gallery');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Storage configuration
+  // ---------------------------------------------------------------------------
+
   group('DocumentScannerService - storage configuration', () {
     test('configures storage with custom directory', () {
       scannerService.configureStorage(
@@ -239,6 +299,10 @@ void main() {
       verify(mockStorageHelper.configure(any)).called(1);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // finalizeScanResult
+  // ---------------------------------------------------------------------------
 
   group('DocumentScannerService - finalizeScanResult', () {
     test('generates PDF if not present and saves document', () async {
@@ -254,29 +318,8 @@ void main() {
         processedImageData: processedImageData,
       );
 
-      when(mockPdfGenerator.generatePdf(
-        imageData: anyNamed('imageData'),
-        documentType: anyNamed('documentType'),
-        resolution: anyNamed('resolution'),
-        documentFormat: anyNamed('documentFormat'),
-        metadata: anyNamed('metadata'),
-      )).thenAnswer((_) async => pdfData);
-
-      when(mockStorageHelper.getExternalStorageDirectory())
-          .thenAnswer((_) async => Directory.systemTemp);
-
-      when(mockStorageHelper.generateFilename(
-        documentType: anyNamed('documentType'),
-        timestamp: anyNamed('timestamp'),
-        customFilename: anyNamed('customFilename'),
-        metadata: anyNamed('metadata'),
-      )).thenReturn('test_receipt');
-
-      when(mockStorageHelper.savePdfFile(
-        directory: anyNamed('directory'),
-        filename: anyNamed('filename'),
-        pdfData: anyNamed('pdfData'),
-      )).thenAnswer((_) async => '/test/test_receipt.pdf');
+      stubSavePipeline(
+          pdfData: pdfData, savedPdfPath: '/test/test_receipt.pdf');
 
       final result = await scannerService.finalizeScanResult(document, null);
 
@@ -292,6 +335,10 @@ void main() {
       )).called(1);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // finalizeMultiPageSession
+  // ---------------------------------------------------------------------------
 
   group('DocumentScannerService - finalizeMultiPageSession', () {
     test('combines pages into single PDF and saves', () async {

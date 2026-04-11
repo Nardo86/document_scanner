@@ -40,7 +40,6 @@ jobs:
     - name: Test package
       run: flutter test
       timeout-minutes: 10
-      continue-on-error: true
     
     - name: Install example app dependencies
       run: flutter pub get

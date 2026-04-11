@@ -569,10 +569,6 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
         },
       );
 
-      print('🔍 MULTI-PAGE DEBUG: Final document created');
-      print('🔍 - pdfData exists: ${finalDocument.pdfData != null}');
-      print('🔍 - pdfData size: ${finalDocument.pdfData?.length ?? 0}');
-
       // Save to external storage using finalizeScanResult
       final saveResult = await _scannerService.finalizeScanResult(
         finalDocument,
@@ -580,14 +576,8 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
       );
 
       if (saveResult.success && saveResult.document != null) {
-        print('✅ MULTI-PAGE DEBUG: Document saved successfully');
-        print('✅ - pdfPath: ${saveResult.document!.pdfPath}');
-        print('✅ - processedPath: ${saveResult.document!.processedPath}');
-        
-        // Show PDF preview before completing
         await _showPdfPreview(saveResult.document!);
       } else {
-        print('❌ MULTI-PAGE DEBUG: Save failed: ${saveResult.error}');
         _handleError('Failed to save multi-page document: ${saveResult.error}');
       }
     } catch (e) {
@@ -755,8 +745,8 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
           );
         }).toList();
       }
-    } catch (e) {
-      print('Error extracting corners from metadata: $e');
+    } catch (_) {
+      // Malformed metadata; ignore silently.
     }
     return null;
   }

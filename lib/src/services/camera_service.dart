@@ -78,8 +78,14 @@ class ImageResizeInfo {
   }
 }
 
-/// Service for handling camera and gallery operations
-/// Wraps permission handling and image capture
+/// Maximum long-edge dimension for captured/imported images.
+const int _captureMaxLongEdge = 2000;
+
+/// JPEG quality used when re-encoding resized images.
+const int _resizeJpegQuality = 95;
+
+/// Service for handling camera and gallery operations.
+/// Wraps permission handling and image capture.
 class CameraService {
   final ImagePicker _imagePicker;
 
@@ -191,62 +197,61 @@ class CameraService {
     return cameraGranted && storageGranted;
   }
 
-  /// Resize image to ensure long edge is at most 2000px
-  /// Returns the resized image data and resize information
+  /// Resize image so that the long edge is at most [_captureMaxLongEdge] px.
   (Uint8List, ImageResizeInfo) _resizeImageIfNeeded(Uint8List imageData) {
-    const maxLongEdge = 2000;
-    
-    // Decode image to get dimensions
     final image = img.decodeImage(imageData);
     if (image == null) {
-      return (imageData, ImageResizeInfo(
-        originalWidth: 0,
-        originalHeight: 0,
-        resizedWidth: 0,
-        resizedHeight: 0,
-        resizeRatio: 1.0,
-      ));
+      return (
+        imageData,
+        const ImageResizeInfo(
+          originalWidth: 0,
+          originalHeight: 0,
+          resizedWidth: 0,
+          resizedHeight: 0,
+          resizeRatio: 1.0,
+        ),
+      );
     }
 
-    final originalWidth = image.width;
-    final originalHeight = image.height;
-    
-    // Check if resize is needed
-    final maxDimension = math.max(originalWidth, originalHeight);
-    if (maxDimension <= maxLongEdge) {
-      // No resize needed
-      final jpegData = img.encodeJpg(image, quality: 95);
-      return (jpegData, ImageResizeInfo(
-        originalWidth: originalWidth,
-        originalHeight: originalHeight,
-        resizedWidth: originalWidth,
-        resizedHeight: originalHeight,
-        resizeRatio: 1.0,
-      ));
+    final origW = image.width;
+    final origH = image.height;
+    final maxDim = math.max(origW, origH);
+
+    if (maxDim <= _captureMaxLongEdge) {
+      final jpegData = img.encodeJpg(image, quality: _resizeJpegQuality);
+      return (
+        jpegData,
+        ImageResizeInfo(
+          originalWidth: origW,
+          originalHeight: origH,
+          resizedWidth: origW,
+          resizedHeight: origH,
+          resizeRatio: 1.0,
+        ),
+      );
     }
 
-    // Calculate new dimensions
-    final resizeRatio = maxLongEdge / maxDimension;
-    final newWidth = (originalWidth * resizeRatio).round();
-    final newHeight = (originalHeight * resizeRatio).round();
-    
-    // Resize image
-    final resizedImage = img.copyResize(
+    final ratio = _captureMaxLongEdge / maxDim;
+    final newW = (origW * ratio).round();
+    final newH = (origH * ratio).round();
+
+    final resized = img.copyResize(
       image,
-      width: newWidth,
-      height: newHeight,
+      width: newW,
+      height: newH,
       interpolation: img.Interpolation.average,
     );
-    
-    // Encode back to JPEG
-    final resizedImageData = img.encodeJpg(resizedImage, quality: 95);
-    
-    return (resizedImageData, ImageResizeInfo(
-      originalWidth: originalWidth,
-      originalHeight: originalHeight,
-      resizedWidth: newWidth,
-      resizedHeight: newHeight,
-      resizeRatio: resizeRatio,
-    ));
+
+    final resizedData = img.encodeJpg(resized, quality: _resizeJpegQuality);
+    return (
+      resizedData,
+      ImageResizeInfo(
+        originalWidth: origW,
+        originalHeight: origH,
+        resizedWidth: newW,
+        resizedHeight: newH,
+        resizeRatio: ratio,
+      ),
+    );
   }
 }

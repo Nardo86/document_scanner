@@ -61,8 +61,7 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
       setState(() {
         _detectedCorners = corners;
       });
-    } catch (e) {
-      print('Error detecting document edges: $e');
+    } catch (_) {
       // Fallback to default corners if detection fails
       setState(() {
         _detectedCorners = [
@@ -717,8 +716,8 @@ class _CropOverlayWidgetState extends State<CropOverlayWidget> {
       });
       
       image.dispose();
-    } catch (e) {
-      print('Error loading image size: $e');
+    } catch (_) {
+      // Image size detection failed; overlay will not render.
     }
   }
 

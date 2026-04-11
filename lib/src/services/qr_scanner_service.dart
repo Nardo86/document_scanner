@@ -10,24 +10,17 @@ import '../models/scan_result.dart';
 /// Service for QR code scanning and manual download
 class QRScannerService {
   
-  /// Scan QR code and return result using mobile_scanner
-  /// AIDEV-NOTE: Fixed UnimplementedError - returns error with guidance for proper usage
+  /// Scan a QR code.
+  ///
+  /// This overload does not have access to a [BuildContext] so it cannot show
+  /// the scanner UI. Prefer [scanQRCodeWithUI] when a context is available.
   Future<QRScanResult> scanQRCode() async {
-    try {
-      // This method requires BuildContext for UI navigation
-      // Return error with clear guidance instead of throwing UnimplementedError
-      return QRScanResult.error(
-        error: 'QR scanning requires UI context. Use scanQRCodeWithUI() with BuildContext instead.',
-        qrData: '',
-        contentType: QRContentType.unknown,
-      );
-    } catch (e) {
-      return QRScanResult.error(
-        error: 'Failed to scan QR code: $e',
-        qrData: '',
-        contentType: QRContentType.unknown,
-      );
-    }
+    return QRScanResult.error(
+      error: 'QR scanning requires UI context. '
+          'Use scanQRCodeWithUI() with BuildContext instead.',
+      qrData: '',
+      contentType: QRContentType.unknown,
+    );
   }
   
   /// Scan QR code with UI integration
@@ -244,10 +237,8 @@ class QRScannerService {
     }
   }
 
-  /// Dispose QR scanner resources
-  void dispose() {
-    // _controller?.dispose();
-  }
+  /// Dispose QR scanner resources.
+  void dispose() {}
 }
 
 /// QR Scanner Screen Widget

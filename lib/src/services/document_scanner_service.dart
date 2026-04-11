@@ -11,9 +11,10 @@ import 'image_processor.dart';
 import '../ui/image_editing_widget.dart';
 import '../ui/pdf_preview_widget.dart';
 
-/// Main orchestrator service for document scanning operations
-/// Delegates capture/import to CameraService, uses StorageHelper for file operations,
-/// and pipes data through ImageProcessor/PdfGenerator
+/// Main orchestrator service for document scanning operations.
+///
+/// Delegates capture/import to [CameraService], uses [StorageHelper] for file
+/// operations, and pipes data through [ImageProcessor] / [PdfGenerator].
 class DocumentScannerService {
   factory DocumentScannerService() => _instance;
 
@@ -29,7 +30,8 @@ class DocumentScannerService {
         _qrScanner = qrScanner ?? QRScannerService(),
         _imageProcessor = imageProcessor ?? ImageProcessor();
 
-  static final DocumentScannerService _instance = DocumentScannerService._internal();
+  static final DocumentScannerService _instance =
+      DocumentScannerService._internal();
 
   DocumentScannerService.withDependencies({
     required CameraService cameraService,
@@ -51,8 +53,12 @@ class DocumentScannerService {
   final QRScannerService _qrScanner;
   final ImageProcessor _imageProcessor;
 
-  /// Configure storage directory and app name for file operations
-  /// This must be called before any scanning operations to avoid hardcoded paths
+  // ---------------------------------------------------------------------------
+  // Configuration
+  // ---------------------------------------------------------------------------
+
+  /// Configure storage directory and app name for file operations.
+  /// Must be called before any scanning operations.
   void configureStorage({
     String? customStorageDirectory,
     String? appName,
@@ -64,247 +70,91 @@ class DocumentScannerService {
     ));
   }
 
-  /// Scan a document using camera
+  // ---------------------------------------------------------------------------
+  // Scan / Import — unified capture entry points
+  // ---------------------------------------------------------------------------
+
+  /// Scan a document using the camera.
+  ///
+  /// When [autoProcess] is true the document is processed and saved immediately
+  /// (same behaviour as [scanDocumentWithProcessing]).
   Future<ScanResult> scanDocument({
     required DocumentType documentType,
     DocumentProcessingOptions? processingOptions,
     String? customFilename,
     bool autoProcess = false,
-  }) async {
-    try {
-      final captureResult = await _cameraService.captureFromCamera();
-
-      if (!captureResult.success) {
-        if (captureResult.cancelled) {
-          return ScanResult.cancelled();
-        }
-        return ScanResult.error(error: captureResult.error ?? 'Camera capture failed');
-      }
-
-      final options = processingOptions ?? _getDefaultOptions(documentType);
-
-      if (autoProcess) {
-        return await _processAndSaveDocument(
-          rawImageData: captureResult.imageData!,
-          originalPath: captureResult.path!,
-          documentType: documentType,
-          processingOptions: options,
-          customFilename: customFilename,
-          source: 'camera',
-          resizeInfo: captureResult.resizeInfo,
-        );
-      }
-
-      // Apply auto-crop if enabled before opening editor
-      Uint8List? processedImageData;
-      Map<String, dynamic>? autoCropMetadata;
-
-      if (options.autoCorrectPerspective) {
-        try {
-          final processingResult = await _imageProcessor.processImageWithAutoCrop(
-            captureResult.imageData!,
-            options,
-          );
-          
-          processedImageData = processingResult['processedImageData'] as Uint8List;
-          autoCropMetadata = processingResult['metadata'] as Map<String, dynamic>;
-        } catch (e) {
-          // If auto-crop fails, continue with original image
-          print('Auto-crop failed, continuing with original image: $e');
-        }
-      }
-
-      final metadata = <String, dynamic>{
-        'source': 'camera',
-        'originalSize': captureResult.imageData!.length,
-      };
-      
-      // Add resize information if available
-      if (captureResult.resizeInfo != null) {
-        metadata.addAll(captureResult.resizeInfo!.toMetadata());
-      }
-
-      // Add auto-crop metadata if available
-      if (autoCropMetadata != null) {
-        metadata.addAll(autoCropMetadata);
-      }
-
-      final document = ScannedDocument(
-        id: _generateId(),
-        type: documentType,
-        originalPath: captureResult.path!,
-        scanTime: DateTime.now(),
-        processingOptions: options,
-        rawImageData: captureResult.imageData,
-        processedImageData: processedImageData,
-        metadata: metadata,
+  }) =>
+      _captureAndProcess(
+        source: _CaptureSource.camera,
+        documentType: documentType,
+        processingOptions: processingOptions,
+        customFilename: customFilename,
+        autoProcess: autoProcess,
       );
 
-      return ScanResult.success(document: document);
-    } catch (e) {
-      return ScanResult.error(error: 'Failed to scan document: $e');
-    }
-  }
-
-  /// Import document from gallery
+  /// Import a document from the gallery.
   Future<ScanResult> importDocument({
     required DocumentType documentType,
     DocumentProcessingOptions? processingOptions,
     String? customFilename,
-  }) async {
-    try {
-      final captureResult = await _cameraService.importFromGallery();
-
-      if (!captureResult.success) {
-        if (captureResult.cancelled) {
-          return ScanResult.cancelled();
-        }
-        return ScanResult.error(error: captureResult.error ?? 'Gallery import failed');
-      }
-
-      final options = processingOptions ?? _getDefaultOptions(documentType);
-
-      // Apply auto-crop if enabled before opening editor
-      Uint8List? processedImageData;
-      Map<String, dynamic>? autoCropMetadata;
-
-      if (options.autoCorrectPerspective) {
-        try {
-          final processingResult = await _imageProcessor.processImageWithAutoCrop(
-            captureResult.imageData!,
-            options,
-          );
-          
-          processedImageData = processingResult['processedImageData'] as Uint8List;
-          autoCropMetadata = processingResult['metadata'] as Map<String, dynamic>;
-        } catch (e) {
-          // If auto-crop fails, continue with original image
-          print('Auto-crop failed, continuing with original image: $e');
-        }
-      }
-
-      final metadata = <String, dynamic>{
-        'source': 'gallery',
-        'originalSize': captureResult.imageData!.length,
-      };
-      
-      // Add resize information if available
-      if (captureResult.resizeInfo != null) {
-        metadata.addAll(captureResult.resizeInfo!.toMetadata());
-      }
-
-      // Add auto-crop metadata if available
-      if (autoCropMetadata != null) {
-        metadata.addAll(autoCropMetadata);
-      }
-
-      final document = ScannedDocument(
-        id: _generateId(),
-        type: documentType,
-        originalPath: captureResult.path!,
-        scanTime: DateTime.now(),
-        processingOptions: options,
-        rawImageData: captureResult.imageData,
-        processedImageData: processedImageData,
-        metadata: metadata,
+  }) =>
+      _captureAndProcess(
+        source: _CaptureSource.gallery,
+        documentType: documentType,
+        processingOptions: processingOptions,
+        customFilename: customFilename,
+        autoProcess: false,
       );
 
-      return ScanResult.success(document: document);
-    } catch (e) {
-      return ScanResult.error(error: 'Failed to import document: $e');
-    }
-  }
-
-  /// Scan document with automatic processing and file saving (bypasses image editor)
-  /// Returns ScannedDocument with populated pdfPath and processedPath
+  /// Scan with automatic processing and file saving (bypasses image editor).
+  /// Returns [ScannedDocument] with populated [pdfPath] and [processedPath].
   Future<ScanResult> scanDocumentWithProcessing({
     required DocumentType documentType,
     DocumentProcessingOptions? processingOptions,
     String? customFilename,
-  }) async {
-    try {
-      final captureResult = await _cameraService.captureFromCamera();
-
-      if (!captureResult.success) {
-        if (captureResult.cancelled) {
-          return ScanResult.cancelled();
-        }
-        return ScanResult.error(error: captureResult.error ?? 'Camera capture failed');
-      }
-
-      final options = processingOptions ?? _getDefaultOptions(documentType);
-
-      return await _processAndSaveDocument(
-        rawImageData: captureResult.imageData!,
-        originalPath: captureResult.path!,
+  }) =>
+      _captureAndProcess(
+        source: _CaptureSource.camera,
         documentType: documentType,
-        processingOptions: options,
+        processingOptions: processingOptions,
         customFilename: customFilename,
-        source: 'camera',
-        resizeInfo: captureResult.resizeInfo,
+        autoProcess: true,
       );
-    } catch (e) {
-      return ScanResult.error(error: 'Failed to scan and process document: $e');
-    }
-  }
 
-  /// Import document with automatic processing and file saving (bypasses image editor)
-  /// Returns ScannedDocument with populated pdfPath and processedPath
+  /// Import with automatic processing and file saving (bypasses image editor).
+  /// Returns [ScannedDocument] with populated [pdfPath] and [processedPath].
   Future<ScanResult> importDocumentWithProcessing({
     required DocumentType documentType,
     DocumentProcessingOptions? processingOptions,
     String? customFilename,
-  }) async {
-    try {
-      final captureResult = await _cameraService.importFromGallery();
-
-      if (!captureResult.success) {
-        if (captureResult.cancelled) {
-          return ScanResult.cancelled();
-        }
-        return ScanResult.error(error: captureResult.error ?? 'Gallery import failed');
-      }
-
-      final options = processingOptions ?? _getDefaultOptions(documentType);
-
-      return await _processAndSaveDocument(
-        rawImageData: captureResult.imageData!,
-        originalPath: captureResult.path!,
+  }) =>
+      _captureAndProcess(
+        source: _CaptureSource.gallery,
         documentType: documentType,
-        processingOptions: options,
+        processingOptions: processingOptions,
         customFilename: customFilename,
-        source: 'gallery',
-        resizeInfo: captureResult.resizeInfo,
+        autoProcess: true,
       );
-    } catch (e) {
-      return ScanResult.error(error: 'Failed to import and process document: $e');
-    }
-  }
 
-  /// Scan QR code for manual download
+  // ---------------------------------------------------------------------------
+  // QR code
+  // ---------------------------------------------------------------------------
+
+  /// Scan a QR code for manual download.
   Future<QRScanResult> scanQRCode() async {
     try {
       final hasPermission = await _cameraService.requestCameraPermission();
       if (!hasPermission) {
-        return QRScanResult.error(
-          error: 'Camera permission denied',
-          qrData: '',
-        );
+        return QRScanResult.error(error: 'Camera permission denied', qrData: '');
       }
-
       return await _qrScanner.scanQRCode();
     } catch (e) {
-      return QRScanResult.error(
-        error: 'Failed to scan QR code: $e',
-        qrData: '',
-      );
+      return QRScanResult.error(error: 'Failed to scan QR code: $e', qrData: '');
     }
   }
 
-  /// Scan QR code and automatically download document if URL is detected
-  Future<ScanResult> scanQRCodeAndDownload({
-    String? customFilename,
-  }) async {
+  /// Scan a QR code and download the document if a URL is detected.
+  Future<ScanResult> scanQRCodeAndDownload({String? customFilename}) async {
     try {
       final hasCameraPermission = await _cameraService.requestCameraPermission();
       if (!hasCameraPermission) {
@@ -317,44 +167,32 @@ class DocumentScannerService {
       }
 
       final qrResult = await _qrScanner.scanQRCode();
-
       if (!qrResult.success) {
         return ScanResult.error(error: qrResult.error ?? 'QR scan failed');
       }
 
       if (qrResult.contentType == QRContentType.pdfLink ||
           qrResult.contentType == QRContentType.manualLink) {
-        try {
-          final downloadResult = await downloadManualFromUrl(
-            url: qrResult.qrData,
-            customFilename: customFilename,
-          );
-
-          return downloadResult;
-        } catch (e) {
-          return ScanResult.error(
-            error: 'Failed to download from QR URL: $e',
-            metadata: {
-              'qrData': qrResult.qrData,
-              'qrContentType': qrResult.contentType.toString(),
-            },
-          );
-        }
-      } else {
-        return ScanResult.error(
-          error: 'QR code does not contain a downloadable document link.\nContent: ${qrResult.qrData}\nType: ${qrResult.contentType}',
-          metadata: {
-            'qrData': qrResult.qrData,
-            'qrContentType': qrResult.contentType.toString(),
-          },
+        return await downloadManualFromUrl(
+          url: qrResult.qrData,
+          customFilename: customFilename,
         );
       }
+
+      return ScanResult.error(
+        error: 'QR code does not contain a downloadable document link.\n'
+            'Content: ${qrResult.qrData}\nType: ${qrResult.contentType}',
+        metadata: {
+          'qrData': qrResult.qrData,
+          'qrContentType': qrResult.contentType.toString(),
+        },
+      );
     } catch (e) {
       return ScanResult.error(error: 'Failed to scan QR code and download: $e');
     }
   }
 
-  /// Download manual from URL (from QR code)
+  /// Download a document from a URL (typically obtained from a QR code).
   Future<ScanResult> downloadManualFromUrl({
     required String url,
     String? customFilename,
@@ -371,17 +209,19 @@ class DocumentScannerService {
       }
 
       final savedDocument = await _saveToExternalStorage(document, customFilename);
-      return ScanResult.success(
-        document: savedDocument,
-        type: ScanResultType.download,
-      );
+      return ScanResult.success(document: savedDocument, type: ScanResultType.download);
     } catch (e) {
       return ScanResult.error(error: 'Failed to download manual: $e');
     }
   }
 
-  /// Finalize scan result after image editing (used by widgets)
-  /// This method handles PDF generation and external storage saving for edited documents
+  // ---------------------------------------------------------------------------
+  // Finalization
+  // ---------------------------------------------------------------------------
+
+  /// Finalize a scan result after image editing.
+  ///
+  /// Generates a PDF (if configured) and saves the document to external storage.
   Future<ScanResult> finalizeScanResult(
     ScannedDocument document,
     String? customFilename,
@@ -411,19 +251,16 @@ class DocumentScannerService {
         },
       );
 
-      final savedDocument = await _saveToExternalStorage(
-        updatedDocument,
-        customFilename,
-      );
-
+      final savedDocument = await _saveToExternalStorage(updatedDocument, customFilename);
       return ScanResult.success(document: savedDocument);
     } catch (e) {
       return ScanResult.error(error: 'Failed to finalize scan result: $e');
     }
   }
 
-  /// Finalize multi-page document session
-  /// Combines all pages into a single PDF and saves to storage
+  /// Finalize a multi-page document session.
+  ///
+  /// Combines all pages into a single PDF and saves to storage.
   Future<ScanResult> finalizeMultiPageSession(
     MultiPageScanSession session, {
     String? customFilename,
@@ -438,13 +275,11 @@ class DocumentScannerService {
         return ScanResult.error(error: 'Storage permission denied');
       }
 
-      final pageImages = <Uint8List>[];
-      for (final page in session.pages) {
-        final imageData = page.processedImageData ?? page.rawImageData;
-        if (imageData != null) {
-          pageImages.add(imageData);
-        }
-      }
+      final pageImages = <Uint8List>[
+        for (final page in session.pages)
+          if (page.processedImageData ?? page.rawImageData case final data?)
+            data,
+      ];
 
       if (pageImages.isEmpty) {
         return ScanResult.error(error: 'No valid page images to finalize');
@@ -478,16 +313,20 @@ class DocumentScannerService {
         document,
         customFilename ?? session.customFilename,
       );
-
       return ScanResult.success(document: savedDocument);
     } catch (e) {
       return ScanResult.error(error: 'Failed to finalize multi-page session: $e');
     }
   }
 
-  /// Show image editor and handle the complete editing flow
-  /// This method can be used by both DocumentScannerWidget and quick actions
-  /// Returns the final ScanResult after editing, preview, and finalization
+  // ---------------------------------------------------------------------------
+  // Image editor flow
+  // ---------------------------------------------------------------------------
+
+  /// Show the image editor and handle the complete editing flow.
+  ///
+  /// Can be used by both [DocumentScannerWidget] and quick actions.
+  /// Returns the final [ScanResult] after editing, preview, and finalization.
   Future<ScanResult> showImageEditorFlow({
     required BuildContext context,
     required ScannedDocument document,
@@ -495,12 +334,10 @@ class DocumentScannerService {
     DocumentProcessingOptions? processingOptions,
   }) async {
     if (document.rawImageData == null) {
-      // No image data available, return error
       return ScanResult.error(error: 'No image data available for editing');
     }
 
     try {
-      // Navigate to image editing screen
       final editResult = await Navigator.push<Map<String, dynamic>?>(
         context,
         MaterialPageRoute(
@@ -510,111 +347,152 @@ class DocumentScannerService {
             initialCropCorners: _extractCornersFromMetadata(document.metadata),
             onImageEdited: (editedData, selectedResolution, selectedFormat) {
               Navigator.pop(context, {
-                'imageData': editedData, 
-                'resolution': selectedResolution, 
-                'format': selectedFormat
+                'imageData': editedData,
+                'resolution': selectedResolution,
+                'format': selectedFormat,
               });
             },
-            onCancel: () {
-              Navigator.pop(context, null);
-            },
+            onCancel: () => Navigator.pop(context, null),
           ),
         ),
       );
 
-      if (editResult != null) {
-        final editedImageData = editResult['imageData'] as Uint8List;
-        final selectedResolution = editResult['resolution'] as PdfResolution;
-        final selectedFormat = editResult['format'] as DocumentFormat;
-        
-        // Create new processing options with selected resolution and format
-        final updatedProcessingOptions = DocumentProcessingOptions(
-          convertToGrayscale: processingOptions?.convertToGrayscale ?? true,
-          enhanceContrast: processingOptions?.enhanceContrast ?? true,
-          autoCorrectPerspective: processingOptions?.autoCorrectPerspective ?? true,
-          compressionQuality: processingOptions?.compressionQuality ?? 0.8,
-          outputFormat: processingOptions?.outputFormat ?? ImageFormat.jpeg,
-          generatePdf: processingOptions?.generatePdf ?? true,
-          saveImageFile: processingOptions?.saveImageFile ?? false,
-          pdfResolution: selectedResolution, // Use selected resolution
-          documentFormat: selectedFormat, // Use selected format
-          customFilename: processingOptions?.customFilename,
-        );
-        
-        // Create document with edited image and selected resolution
-        final editedDocument = ScannedDocument(
-          id: document.id,
-          type: document.type,
-          originalPath: document.originalPath,
-          scanTime: document.scanTime,
-          processingOptions: updatedProcessingOptions,
-          processedPath: document.processedPath,
-          pdfPath: document.pdfPath,
-          rawImageData: document.rawImageData,
-          processedImageData: editedImageData,
-          pdfData: document.pdfData,
-          pages: document.pages,
-          isMultiPage: document.isMultiPage,
-          metadata: {
-            ...document.metadata,
-            'edited': true,
-            'editedAt': DateTime.now().toIso8601String(),
-            'selectedResolution': selectedResolution.name,
-            'selectedFormat': selectedFormat.name,
-          },
-        );
-        
-        // Finalize the document with the selected resolution
-        final finalResult = await finalizeScanResult(
-          editedDocument,
-          customFilename,
-        );
-        
-        // Show PDF preview before completing
-        if (finalResult.success && finalResult.document?.pdfData != null) {
-          await _showPdfPreview(context, finalResult.document!);
-          return finalResult;
-        } else {
-          return finalResult;
-        }
-      } else {
-        // User cancelled editing
-        return ScanResult.error(
-          error: 'Editing cancelled',
-          type: ScanResultType.scan,
-        );
+      if (editResult == null) {
+        return ScanResult.error(error: 'Editing cancelled', type: ScanResultType.scan);
       }
-    } catch (e) {
-      return ScanResult.error(
-        error: 'Error during image editing: $e',
-        type: ScanResultType.scan,
+
+      final editedImageData = editResult['imageData'] as Uint8List;
+      final selectedResolution = editResult['resolution'] as PdfResolution;
+      final selectedFormat = editResult['format'] as DocumentFormat;
+
+      final updatedProcessingOptions = DocumentProcessingOptions(
+        convertToGrayscale: processingOptions?.convertToGrayscale ?? true,
+        enhanceContrast: processingOptions?.enhanceContrast ?? true,
+        autoCorrectPerspective: processingOptions?.autoCorrectPerspective ?? true,
+        compressionQuality: processingOptions?.compressionQuality ?? 0.8,
+        outputFormat: processingOptions?.outputFormat ?? ImageFormat.jpeg,
+        generatePdf: processingOptions?.generatePdf ?? true,
+        saveImageFile: processingOptions?.saveImageFile ?? false,
+        pdfResolution: selectedResolution,
+        documentFormat: selectedFormat,
+        customFilename: processingOptions?.customFilename,
       );
+
+      final editedDocument = ScannedDocument(
+        id: document.id,
+        type: document.type,
+        originalPath: document.originalPath,
+        scanTime: document.scanTime,
+        processingOptions: updatedProcessingOptions,
+        processedPath: document.processedPath,
+        pdfPath: document.pdfPath,
+        rawImageData: document.rawImageData,
+        processedImageData: editedImageData,
+        pdfData: document.pdfData,
+        pages: document.pages,
+        isMultiPage: document.isMultiPage,
+        metadata: {
+          ...document.metadata,
+          'edited': true,
+          'editedAt': DateTime.now().toIso8601String(),
+          'selectedResolution': selectedResolution.name,
+          'selectedFormat': selectedFormat.name,
+        },
+      );
+
+      final finalResult = await finalizeScanResult(editedDocument, customFilename);
+
+      if (finalResult.success && finalResult.document?.pdfData != null) {
+        await _showPdfPreview(context, finalResult.document!);
+      }
+      return finalResult;
+    } catch (e) {
+      return ScanResult.error(error: 'Error during image editing: $e', type: ScanResultType.scan);
     }
   }
 
-  /// Show PDF preview before final completion
-  Future<void> _showPdfPreview(BuildContext context, ScannedDocument document) async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => PdfPreviewWidget(
-          pdfData: document.pdfData,
-          pdfPath: document.pdfPath,
-          title: 'Document Preview',
-          onConfirm: () {
-            Navigator.pop(context);
-          },
-          onCancel: () {
-            Navigator.pop(context);
-            // Note: In this context, we don't have a callback to handle cancellation
-            // The caller will need to handle this case if needed
-          },
-        ),
-      ),
-    );
+  // ---------------------------------------------------------------------------
+  // Private helpers
+  // ---------------------------------------------------------------------------
+
+  /// Unified capture → optional auto-crop → optional auto-process pipeline.
+  Future<ScanResult> _captureAndProcess({
+    required _CaptureSource source,
+    required DocumentType documentType,
+    DocumentProcessingOptions? processingOptions,
+    String? customFilename,
+    required bool autoProcess,
+  }) async {
+    try {
+      final captureResult = source == _CaptureSource.camera
+          ? await _cameraService.captureFromCamera()
+          : await _cameraService.importFromGallery();
+
+      if (!captureResult.success) {
+        if (captureResult.cancelled) return ScanResult.cancelled();
+        return ScanResult.error(
+          error: captureResult.error ?? '${source.label} failed',
+        );
+      }
+
+      final options = processingOptions ?? _getDefaultOptions(documentType);
+
+      // Fast path: process + save immediately, skip editor
+      if (autoProcess) {
+        return await _processAndSaveDocument(
+          rawImageData: captureResult.imageData!,
+          originalPath: captureResult.path!,
+          documentType: documentType,
+          processingOptions: options,
+          customFilename: customFilename,
+          source: source.label,
+          resizeInfo: captureResult.resizeInfo,
+        );
+      }
+
+      // Editor path: optionally auto-crop, then return raw document for editing
+      Uint8List? processedImageData;
+      Map<String, dynamic>? autoCropMetadata;
+
+      if (options.autoCorrectPerspective) {
+        try {
+          final processingResult = await _imageProcessor.processImageWithAutoCrop(
+            captureResult.imageData!,
+            options,
+          );
+          processedImageData = processingResult['processedImageData'] as Uint8List;
+          autoCropMetadata = processingResult['metadata'] as Map<String, dynamic>;
+        } catch (_) {
+          // Auto-crop failure is non-fatal; continue with original image
+        }
+      }
+
+      final metadata = <String, dynamic>{
+        'source': source.label,
+        'originalSize': captureResult.imageData!.length,
+        if (captureResult.resizeInfo != null)
+          ...captureResult.resizeInfo!.toMetadata(),
+        if (autoCropMetadata != null) ...autoCropMetadata,
+      };
+
+      final document = ScannedDocument(
+        id: _generateId(),
+        type: documentType,
+        originalPath: captureResult.path!,
+        scanTime: DateTime.now(),
+        processingOptions: options,
+        rawImageData: captureResult.imageData,
+        processedImageData: processedImageData,
+        metadata: metadata,
+      );
+
+      return ScanResult.success(document: document);
+    } catch (e) {
+      return ScanResult.error(error: 'Failed to ${source.label} document: $e');
+    }
   }
 
-  /// Internal method to process and save document
+  /// Process raw image data and save to external storage.
   Future<ScanResult> _processAndSaveDocument({
     required Uint8List rawImageData,
     required String originalPath,
@@ -625,7 +503,6 @@ class DocumentScannerService {
     ImageResizeInfo? resizeInfo,
   }) async {
     try {
-      // Use the new processImageWithAutoCrop method to get full result with metadata
       final processingResult = await _imageProcessor.processImageWithAutoCrop(
         rawImageData,
         processingOptions,
@@ -648,7 +525,9 @@ class DocumentScannerService {
             'processedSize': processedImageData.length,
             'autoProcessed': true,
             'autoCrop': autoCropMetadata['autoCrop'],
-            'detectedEdges': detectedEdges.map((offset) => {'dx': offset.dx, 'dy': offset.dy}).toList(),
+            'detectedEdges': detectedEdges
+                .map((o) => {'dx': o.dx, 'dy': o.dy})
+                .toList(),
           },
         );
       }
@@ -662,13 +541,11 @@ class DocumentScannerService {
         'finalized': true,
         'finalizedAt': DateTime.now().toIso8601String(),
         'autoCrop': autoCropMetadata['autoCrop'],
-        'detectedEdges': detectedEdges.map((offset) => {'dx': offset.dx, 'dy': offset.dy}).toList(),
+        'detectedEdges': detectedEdges
+            .map((o) => {'dx': o.dx, 'dy': o.dy})
+            .toList(),
+        if (resizeInfo != null) ...resizeInfo.toMetadata(),
       };
-      
-      // Add resize information if available
-      if (resizeInfo != null) {
-        metadata.addAll(resizeInfo.toMetadata());
-      }
 
       final document = ScannedDocument(
         id: _generateId(),
@@ -682,18 +559,14 @@ class DocumentScannerService {
         metadata: metadata,
       );
 
-      final savedDocument = await _saveToExternalStorage(
-        document,
-        customFilename,
-      );
-
+      final savedDocument = await _saveToExternalStorage(document, customFilename);
       return ScanResult.success(document: savedDocument);
     } catch (e) {
       return ScanResult.error(error: 'Failed to process and save document: $e');
     }
   }
 
-  /// Save document to external storage
+  /// Save document to configured external storage.
   Future<ScannedDocument> _saveToExternalStorage(
     ScannedDocument document,
     String? customFilename,
@@ -711,7 +584,8 @@ class DocumentScannerService {
     String? processedPath;
     String? pdfPath;
 
-    if (document.processedImageData != null && document.processingOptions.saveImageFile) {
+    if (document.processedImageData != null &&
+        document.processingOptions.saveImageFile) {
       processedPath = await _storageHelper.saveImageFile(
         directory: directory,
         filename: filename,
@@ -738,7 +612,24 @@ class DocumentScannerService {
     );
   }
 
-  /// Get default processing options for document type
+  Future<void> _showPdfPreview(
+    BuildContext context,
+    ScannedDocument document,
+  ) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PdfPreviewWidget(
+          pdfData: document.pdfData,
+          pdfPath: document.pdfPath,
+          title: 'Document Preview',
+          onConfirm: () => Navigator.pop(context),
+          onCancel: () => Navigator.pop(context),
+        ),
+      ),
+    );
+  }
+
   DocumentProcessingOptions _getDefaultOptions(DocumentType type) {
     switch (type) {
       case DocumentType.receipt:
@@ -746,33 +637,37 @@ class DocumentScannerService {
       case DocumentType.manual:
         return DocumentProcessingOptions.manual;
       case DocumentType.document:
-        return DocumentProcessingOptions.document;
       case DocumentType.other:
         return DocumentProcessingOptions.document;
     }
   }
 
-  /// Generate unique ID for document
   String _generateId() {
-    return DateTime.now().millisecondsSinceEpoch.toString();
+    return '${DateTime.now().microsecondsSinceEpoch}';
   }
 
-  /// Extract corners from metadata
   List<Offset>? _extractCornersFromMetadata(Map<String, dynamic> metadata) {
+    final detectedEdges = metadata['detectedEdges'] as List<dynamic>?;
+    if (detectedEdges == null || detectedEdges.isEmpty) return null;
     try {
-      final detectedEdges = metadata['detectedEdges'] as List<dynamic>?;
-      if (detectedEdges != null && detectedEdges.isNotEmpty) {
-        return detectedEdges.map((edge) {
-          final edgeMap = edge as Map<String, dynamic>;
-          return Offset(
-            (edgeMap['dx'] as num).toDouble(),
-            (edgeMap['dy'] as num).toDouble(),
-          );
-        }).toList();
-      }
-    } catch (e) {
-      print('Error extracting corners from metadata: $e');
+      return detectedEdges.map((edge) {
+        final edgeMap = edge as Map<String, dynamic>;
+        return Offset(
+          (edgeMap['dx'] as num).toDouble(),
+          (edgeMap['dy'] as num).toDouble(),
+        );
+      }).toList();
+    } catch (_) {
+      return null;
     }
-    return null;
   }
+}
+
+/// Internal enum to distinguish capture sources without string comparison.
+enum _CaptureSource {
+  camera('camera'),
+  gallery('gallery');
+
+  const _CaptureSource(this.label);
+  final String label;
 }

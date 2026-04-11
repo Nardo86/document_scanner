@@ -428,6 +428,20 @@ class MockImageProcessor extends _i1.Mock implements _i13.ImageProcessor {
           as _i5.Future<_i9.Uint8List>);
 
   @override
+  _i5.Future<Map<String, dynamic>> processImageWithAutoCrop(
+    _i9.Uint8List? imageData,
+    _i7.DocumentProcessingOptions? options,
+  ) =>
+      (super.noSuchMethod(
+            Invocation.method(
+                #processImageWithAutoCrop, [imageData, options]),
+            returnValue: _i5.Future<Map<String, dynamic>>.value(
+              <String, dynamic>{},
+            ),
+          )
+          as _i5.Future<Map<String, dynamic>>);
+
+  @override
   _i5.Future<_i9.Uint8List> applyImageEditing(
     _i9.Uint8List? imageData,
     _i7.ImageEditingOptions? editingOptions,
@@ -439,7 +453,8 @@ class MockImageProcessor extends _i1.Mock implements _i13.ImageProcessor {
           as _i5.Future<_i9.Uint8List>);
 
   @override
-  _i5.Future<List<_i14.Offset>> detectDocumentEdges(_i9.Uint8List? imageData) =>
+  _i5.Future<List<_i14.Offset>> detectDocumentEdges(
+          _i9.Uint8List? imageData) =>
       (super.noSuchMethod(
             Invocation.method(#detectDocumentEdges, [imageData]),
             returnValue: _i5.Future<List<_i14.Offset>>.value(<_i14.Offset>[]),
@@ -453,4 +468,16 @@ class MockImageProcessor extends _i1.Mock implements _i13.ImageProcessor {
             returnValue: <String, dynamic>{},
           )
           as Map<String, dynamic>);
+
+  @override
+  void clearEdgeCache() => super.noSuchMethod(
+        Invocation.method(#clearEdgeCache, []),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void dispose() => super.noSuchMethod(
+        Invocation.method(#dispose, []),
+        returnValueForMissingStub: null,
+      );
 }
