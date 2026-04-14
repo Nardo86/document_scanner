@@ -159,11 +159,7 @@ class AutoCropper {
     final blurred = img.gaussianBlur(grayscale, radius: 2);
     final edges = _cannyEdgeDetection(blurred);
     final dilated = _morphologicalDilation(edges);
-    final cannyResult = _findLargestContour(
-      dilated,
-      image.width,
-      image.height,
-    );
+    final cannyResult = _findLargestContour(dilated, image.width, image.height);
 
     // Return whichever strategy scored higher
     if (otsuResult.confidence > cannyResult.confidence) {
@@ -196,8 +192,10 @@ class AutoCropper {
     for (int y = 0; y < height; y++) {
       for (int x = 0; x < width; x++) {
         final p = image.getPixel(x, y);
-        final lum =
-            (0.299 * p.r + 0.587 * p.g + 0.114 * p.b).round().clamp(0, 255);
+        final lum = (0.299 * p.r + 0.587 * p.g + 0.114 * p.b).round().clamp(
+          0,
+          255,
+        );
         luminance[idx] = lum;
         histogram[lum]++;
         idx++;
@@ -307,11 +305,7 @@ class AutoCropper {
     }
 
     // --- Extract 4 corners from boundary ---
-    final corners = _approximateContourToQuad(
-      boundaryPoints,
-      width,
-      height,
-    );
+    final corners = _approximateContourToQuad(boundaryPoints, width, height);
 
     if (corners.length != 4) {
       return _DetectionResult([], 0.0, bestSize.toDouble());
@@ -347,8 +341,7 @@ class AutoCropper {
       sumB += i * histogram[i];
       final meanB = sumB / weightB;
       final meanF = (sum - sumB) / weightF;
-      final variance =
-          weightB * weightF * (meanB - meanF) * (meanB - meanF);
+      final variance = weightB * weightF * (meanB - meanF) * (meanB - meanF);
 
       if (variance > maxVariance) {
         maxVariance = variance;
