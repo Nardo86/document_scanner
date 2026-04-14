@@ -51,11 +51,14 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
     super.initState();
 
     // Use initial preview data if provided, otherwise use original image
-    // This fixes Bug 1: Ensure base and preview images stay synchronized
     _previewImageData = widget.initialPreviewData ?? widget.imageData;
-    _baseImageData =
-        widget.initialPreviewData ??
-        widget.imageData; // Keep base in sync with preview
+    _baseImageData = widget.initialPreviewData ?? widget.imageData;
+
+    // When an auto-cropped preview is provided, preserve the raw original
+    // so that rotation and reset crop can go back to the full image.
+    if (widget.initialPreviewData != null) {
+      _preCropBaseData = widget.imageData;
+    }
 
     // Use initial crop corners if provided, otherwise detect edges
     if (widget.initialCropCorners != null &&
