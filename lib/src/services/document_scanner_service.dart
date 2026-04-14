@@ -519,11 +519,9 @@ class DocumentScannerService {
           detectedEdges = processingResult['detectedEdges'] as List<Offset>?;
 
           // Extract confidence from auto-crop metadata
-          final confidence =
-              (autoCropMetadata?['autoCrop']
-                      as Map<String, dynamic>?)?['confidence']
-                  as double? ??
-              0.0;
+          final autoCropData =
+              autoCropMetadata['autoCrop'] as Map<String, dynamic>?;
+          final confidence = autoCropData?['confidence'] as double? ?? 0.0;
 
           if (confidence > 0.8) {
             // High confidence: apply crop automatically
