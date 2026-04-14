@@ -160,13 +160,15 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
     _applyStepRotation(-90);
   }
 
-  /// Rotate the current base image by [degrees] (±90).
+  /// Rotate the full (pre-crop) image by [degrees] (±90).
   ///
-  /// Always operates on [_baseImageData] so that previous crop/rotation
-  /// is preserved. Slight JPEG re-encoding quality loss is acceptable
-  /// for document scanning use cases.
+  /// Rotation resets any active crop: operates on the pre-crop image
+  /// (or current base if no crop was applied), clears crop state, and
+  /// sets corners to cover the entire rotated surface.
   Future<void> _applyStepRotation(int degrees) async {
-    if (_baseImageData == null) return;
+    // Rotate the full image: use pre-crop data if a crop was applied
+    final sourceData = _preCropBaseData ?? _baseImageData;
+    if (sourceData == null) return;
 
     setState(() {
       _isProcessing = true;
@@ -175,7 +177,7 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
     try {
       final rotationOptions = ImageEditingOptions(rotationDegrees: degrees);
       final rotatedData = await _imageProcessor.applyImageEditing(
-        _baseImageData!,
+        sourceData,
         rotationOptions,
       );
 
@@ -194,9 +196,15 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
       setState(() {
         _baseImageData = rotatedData;
         _previewImageData = previewData;
-        _preCropBaseData = null; // Rotation invalidates pre-crop state
+        _preCropBaseData = null; // Crop is reset
+        _detectedCorners = null;
+        _showCropOverlay = false;
+        _editingOptions = _editingOptions.copyWith(cropCorners: null);
         _isProcessing = false;
       });
+
+      // Re-detect edges on the rotated full image
+      _detectDocumentEdgesOnData(rotatedData);
     } catch (e) {
       setState(() {
         _isProcessing = false;
@@ -251,6 +259,106 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
           context,
         ).showSnackBar(SnackBar(content: Text('Error applying filter: $e')));
       }
+    }
+  }
+
+  /// Reset crop: restore pre-crop image, clear corners, re-apply active filter.
+  Future<void> _resetCrop() async {
+    if (_preCropBaseData == null) return;
+
+    setState(() {
+      _isProcessing = true;
+    });
+
+    try {
+      final restored = _preCropBaseData!;
+      Uint8List previewData = restored;
+
+      // Re-apply active color filter on restored image
+      if (_editingOptions.colorFilter != ColorFilter.none) {
+        final filterOptions = ImageEditingOptions(
+          colorFilter: _editingOptions.colorFilter,
+        );
+        previewData = await _imageProcessor.applyImageEditing(
+          restored,
+          filterOptions,
+        );
+      }
+
+      setState(() {
+        _baseImageData = restored;
+        _preCropBaseData = null;
+        _detectedCorners = null;
+        _showCropOverlay = false;
+        _previewImageData = previewData;
+        _editingOptions = _editingOptions.copyWith(cropCorners: null);
+        _isProcessing = false;
+      });
+
+      // Re-detect edges on the restored image for future crops
+      _detectDocumentEdgesOnData(restored);
+    } catch (e) {
+      setState(() {
+        _isProcessing = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error resetting crop: $e')));
+      }
+    }
+  }
+
+  /// Detect document edges on arbitrary image data (not just widget.imageData).
+  Future<void> _detectDocumentEdgesOnData(Uint8List imageData) async {
+    try {
+      final corners = await _imageProcessor.detectDocumentEdges(imageData);
+      if (!mounted) return;
+      if (corners.isNotEmpty) {
+        setState(() {
+          _detectedCorners = corners;
+        });
+        return;
+      }
+    } catch (_) {
+      if (!mounted) return;
+    }
+    // Fallback: proportional corners based on the given image
+    await _setProportionalFallbackCornersFromData(imageData);
+  }
+
+  /// Set proportional fallback corners from arbitrary image data.
+  Future<void> _setProportionalFallbackCornersFromData(
+    Uint8List imageData,
+  ) async {
+    if (!mounted) return;
+    try {
+      final codec = await ui.instantiateImageCodec(imageData);
+      final frame = await codec.getNextFrame();
+      final w = frame.image.width.toDouble();
+      final h = frame.image.height.toDouble();
+      frame.image.dispose();
+
+      if (!mounted) return;
+      final inset = 0.05;
+      setState(() {
+        _detectedCorners = [
+          Offset(w * inset, h * inset),
+          Offset(w * (1 - inset), h * inset),
+          Offset(w * (1 - inset), h * (1 - inset)),
+          Offset(w * inset, h * (1 - inset)),
+        ];
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _detectedCorners = [
+          const Offset(50, 50),
+          const Offset(300, 50),
+          const Offset(300, 400),
+          const Offset(50, 400),
+        ];
+      });
     }
   }
 
@@ -478,6 +586,13 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
                           icon: const Icon(Icons.check),
                           tooltip: 'Apply Crop',
                           color: Colors.green,
+                        ),
+                      if (!_showCropOverlay && _preCropBaseData != null)
+                        IconButton(
+                          onPressed: _resetCrop,
+                          icon: const Icon(Icons.restart_alt),
+                          tooltip: 'Reset Crop',
+                          color: Colors.orange,
                         ),
                     ],
                   ),

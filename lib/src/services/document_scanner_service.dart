@@ -483,7 +483,12 @@ class DocumentScannerService {
         );
       }
 
-      // Editor path: optionally auto-crop, then return raw document for editing
+      // Editor path: optionally auto-crop, then return raw document for editing.
+      //
+      // Confidence-based strategy:
+      //   > 0.8  — high: apply crop automatically, editor shows result
+      //   0.5–0.8 — medium: pass suggested corners only, user confirms
+      //   < 0.5  — low: no auto-crop, editor uses proportional fallback
       Uint8List? processedImageData;
       Map<String, dynamic>? autoCropMetadata;
 
@@ -491,8 +496,6 @@ class DocumentScannerService {
 
       if (options.autoCorrectPerspective) {
         try {
-          // For the editor path, only auto-crop without color changes.
-          // The user controls filters interactively in the editor.
           final editorCropOptions = DocumentProcessingOptions(
             convertToGrayscale: false,
             enhanceContrast: false,
@@ -510,11 +513,26 @@ class DocumentScannerService {
                 captureResult.imageData!,
                 editorCropOptions,
               );
-          processedImageData =
-              processingResult['processedImageData'] as Uint8List;
+
           autoCropMetadata =
               processingResult['metadata'] as Map<String, dynamic>;
           detectedEdges = processingResult['detectedEdges'] as List<Offset>?;
+
+          // Extract confidence from auto-crop metadata
+          final confidence = (autoCropMetadata?['autoCrop']
+              as Map<String, dynamic>?)?['confidence'] as double? ?? 0.0;
+
+          if (confidence > 0.8) {
+            // High confidence: apply crop automatically
+            processedImageData =
+                processingResult['processedImageData'] as Uint8List;
+          } else if (confidence >= 0.5) {
+            // Medium confidence: pass corners only, user confirms in editor
+            // processedImageData stays null — editor shows raw image
+          } else {
+            // Low confidence: discard edges, editor uses proportional fallback
+            detectedEdges = null;
+          }
         } catch (_) {
           // Auto-crop failure is non-fatal; continue with original image
         }

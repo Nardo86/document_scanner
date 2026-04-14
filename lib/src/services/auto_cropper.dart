@@ -138,31 +138,224 @@ class AutoCropper {
     return _ProcessingImage(originalImage, 1.0);
   }
 
-  /// Run the complete detection pipeline
+  /// Run the complete detection pipeline.
+  ///
+  /// Tries Otsu-based white blob detection first (optimised for white sheets
+  /// on dark backgrounds). If that yields a high-confidence result (≥ 0.5) it
+  /// is returned immediately. Otherwise falls back to the original Canny →
+  /// dilate → contour pipeline and picks the best of the two.
   Future<_DetectionResult> _runDetectionPipeline(
     img.Image image,
     Stopwatch stopwatch,
   ) async {
-    // Convert to grayscale
+    // --- Strategy 1: Otsu white-blob detection ---
+    final otsuResult = _detectWhiteBlob(image);
+    if (otsuResult.confidence >= 0.5) {
+      return otsuResult;
+    }
+
+    // --- Strategy 2: Canny edge detection (original pipeline) ---
     final grayscale = img.grayscale(image);
-
-    // Apply Gaussian blur to reduce noise
     final blurred = img.gaussianBlur(grayscale, radius: 2);
-
-    // Canny edge detection
     final edges = _cannyEdgeDetection(blurred);
-
-    // Morphological dilation to connect edge fragments
     final dilated = _morphologicalDilation(edges);
-
-    // Find contours and extract largest quadrilateral
-    final contourResult = _findLargestContour(
+    final cannyResult = _findLargestContour(
       dilated,
       image.width,
       image.height,
     );
 
-    return contourResult;
+    // Return whichever strategy scored higher
+    if (otsuResult.confidence > cannyResult.confidence) {
+      return otsuResult;
+    }
+    return cannyResult;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Otsu white-blob detection
+  // ---------------------------------------------------------------------------
+
+  /// Detect a white document on a darker background using Otsu binarisation.
+  ///
+  /// 1. Compute luminance histogram and Otsu threshold.
+  /// 2. Binarise: pixels brighter than the threshold are "white" (foreground).
+  /// 3. Find the largest connected white blob.
+  /// 4. If the blob covers ≥ 15 % of the image and is roughly rectangular,
+  ///    extract its four extreme corners and score confidence.
+  _DetectionResult _detectWhiteBlob(img.Image image) {
+    final width = image.width;
+    final height = image.height;
+    final totalPixels = width * height;
+
+    // --- Luminance histogram ---
+    final histogram = List<int>.filled(256, 0);
+    final luminance = List<int>.filled(totalPixels, 0);
+
+    int idx = 0;
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        final p = image.getPixel(x, y);
+        final lum =
+            (0.299 * p.r + 0.587 * p.g + 0.114 * p.b).round().clamp(0, 255);
+        luminance[idx] = lum;
+        histogram[lum]++;
+        idx++;
+      }
+    }
+
+    // --- Otsu threshold ---
+    final threshold = _calculateOtsuThreshold(histogram, totalPixels);
+
+    // --- Binarise and find connected white blobs ---
+    final labels = List<int>.filled(totalPixels, 0);
+    int nextLabel = 1;
+    final blobSizes = <int, int>{}; // label → pixel count
+
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        final i = y * width + x;
+        if (luminance[i] <= threshold || labels[i] != 0) continue;
+
+        // BFS flood fill
+        final label = nextLabel++;
+        int count = 0;
+        final queue = <int>[i];
+        labels[i] = label;
+
+        while (queue.isNotEmpty) {
+          final ci = queue.removeLast();
+          count++;
+          final cx = ci % width;
+          final cy = ci ~/ width;
+
+          // 4-connected neighbours
+          for (final d in [
+            [0, -1],
+            [0, 1],
+            [-1, 0],
+            [1, 0],
+          ]) {
+            final nx = cx + d[0];
+            final ny = cy + d[1];
+            if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+            final ni = ny * width + nx;
+            if (labels[ni] != 0 || luminance[ni] <= threshold) continue;
+            labels[ni] = label;
+            queue.add(ni);
+          }
+        }
+        blobSizes[label] = count;
+      }
+    }
+
+    if (blobSizes.isEmpty) {
+      return _DetectionResult([], 0.0, 0.0);
+    }
+
+    // --- Largest blob ---
+    int bestLabel = blobSizes.keys.first;
+    int bestSize = blobSizes[bestLabel]!;
+    for (final entry in blobSizes.entries) {
+      if (entry.value > bestSize) {
+        bestSize = entry.value;
+        bestLabel = entry.key;
+      }
+    }
+
+    final blobRatio = bestSize / totalPixels;
+    if (blobRatio < 0.15) {
+      // Blob too small — not a document
+      return _DetectionResult([], 0.0, bestSize.toDouble());
+    }
+    if (blobRatio > 0.95) {
+      // Blob covers almost the entire image — no real contrast between
+      // document and background (e.g. uniform image). Skip detection.
+      return _DetectionResult([], 0.0, bestSize.toDouble());
+    }
+
+    // --- Extract blob boundary pixels ---
+    final boundaryPoints = <Point>[];
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        if (labels[y * width + x] != bestLabel) continue;
+        // A boundary pixel has at least one non-blob 4-connected neighbour
+        bool isBoundary = false;
+        for (final d in [
+          [0, -1],
+          [0, 1],
+          [-1, 0],
+          [1, 0],
+        ]) {
+          final nx = x + d[0];
+          final ny = y + d[1];
+          if (nx < 0 || nx >= width || ny < 0 || ny >= height) {
+            isBoundary = true;
+            break;
+          }
+          if (labels[ny * width + nx] != bestLabel) {
+            isBoundary = true;
+            break;
+          }
+        }
+        if (isBoundary) boundaryPoints.add(Point(x, y));
+      }
+    }
+
+    if (boundaryPoints.length < 4) {
+      return _DetectionResult([], 0.0, bestSize.toDouble());
+    }
+
+    // --- Extract 4 corners from boundary ---
+    final corners = _approximateContourToQuad(
+      boundaryPoints,
+      width,
+      height,
+    );
+
+    if (corners.length != 4) {
+      return _DetectionResult([], 0.0, bestSize.toDouble());
+    }
+
+    final confidence = _calculateConfidence(
+      corners,
+      bestSize.toDouble(),
+      totalPixels.toDouble(),
+    );
+
+    return _DetectionResult(corners, confidence, bestSize.toDouble());
+  }
+
+  /// Otsu threshold calculation (same algorithm as ImageProcessor).
+  static int _calculateOtsuThreshold(List<int> histogram, int totalPixels) {
+    double sum = 0;
+    for (int i = 0; i < 256; i++) {
+      sum += i * histogram[i];
+    }
+
+    double sumB = 0;
+    int weightB = 0;
+    double maxVariance = 0;
+    int threshold = 0;
+
+    for (int i = 0; i < 256; i++) {
+      weightB += histogram[i];
+      if (weightB == 0) continue;
+      final weightF = totalPixels - weightB;
+      if (weightF == 0) break;
+
+      sumB += i * histogram[i];
+      final meanB = sumB / weightB;
+      final meanF = (sum - sumB) / weightF;
+      final variance =
+          weightB * weightF * (meanB - meanF) * (meanB - meanF);
+
+      if (variance > maxVariance) {
+        maxVariance = variance;
+        threshold = i;
+      }
+    }
+    return threshold;
   }
 
   /// Canny edge detection implementation
