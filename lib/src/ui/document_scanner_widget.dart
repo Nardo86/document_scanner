@@ -1,8 +1,12 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:image/image.dart' as img;
 
 import '../models/scanned_document.dart';
 import '../models/scan_result.dart';
 import '../services/document_scanner_service.dart';
+import '../services/image_processor.dart';
+import 'document_camera_screen.dart';
 
 /// Main widget for document scanning functionality
 class DocumentScannerWidget extends StatefulWidget {
@@ -289,7 +293,11 @@ class _DocumentScannerWidgetState extends State<DocumentScannerWidget> {
     );
   }
 
-  /// Scan document with camera
+  /// Scan document with guided camera overlay.
+  ///
+  /// Opens a custom camera screen with a draggable A4 trapezoid guide.
+  /// After capture, applies perspective warp using the guide corners and
+  /// passes the corrected image to the editor.
   Future<void> _scanWithCamera() async {
     setState(() {
       _isScanning = true;
@@ -297,18 +305,68 @@ class _DocumentScannerWidgetState extends State<DocumentScannerWidget> {
     });
 
     try {
-      final result = await _scannerService.scanDocument(
-        documentType: widget.documentType,
-        processingOptions: widget.processingOptions,
-        customFilename: widget.customFilename,
+      // Open guided camera screen
+      final guideResult = await Navigator.push<CameraGuideResult>(
+        context,
+        MaterialPageRoute(builder: (context) => const DocumentCameraScreen()),
       );
 
-      if (result.success && result.document != null) {
-        // Show image editor automatically after scan
-        await _showImageEditor(result.document!);
-      } else {
-        widget.onScanComplete(result);
+      if (guideResult == null) {
+        // User cancelled
+        setState(() => _isScanning = false);
+        return;
       }
+
+      // Decode image to get pixel dimensions for corner mapping
+      final decoded = img.decodeImage(guideResult.imageData);
+      if (decoded == null) {
+        _handleError('Failed to decode captured image');
+        return;
+      }
+
+      final imgW = decoded.width.toDouble();
+      final imgH = decoded.height.toDouble();
+
+      // Convert fractional guide corners to pixel coordinates
+      final pixelCorners = guideResult.corners
+          .map((f) => Offset(f.dx * imgW, f.dy * imgH))
+          .toList();
+
+      // Apply perspective warp using the guide corners
+      final imageProcessor = ImageProcessor();
+      Uint8List? warpedData;
+      try {
+        warpedData = await imageProcessor.applyImageEditing(
+          guideResult.imageData,
+          ImageEditingOptions(
+            cropCorners: pixelCorners,
+            documentFormat: DocumentFormat.isoA,
+          ),
+        );
+      } catch (_) {
+        // Perspective warp failed — continue with raw image only
+      }
+
+      final options =
+          widget.processingOptions ?? const DocumentProcessingOptions();
+
+      final document = ScannedDocument(
+        id: '${DateTime.now().microsecondsSinceEpoch}',
+        type: widget.documentType,
+        originalPath: '',
+        scanTime: DateTime.now(),
+        processingOptions: options,
+        rawImageData: guideResult.imageData,
+        processedImageData: warpedData,
+        metadata: {
+          'source': 'guided_camera',
+          'guideCorners': guideResult.corners
+              .map((o) => {'dx': o.dx, 'dy': o.dy})
+              .toList(),
+        },
+      );
+
+      await _showImageEditor(document);
     } catch (e) {
       _handleError('Failed to scan document: $e');
     } finally {
