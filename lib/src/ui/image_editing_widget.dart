@@ -42,6 +42,8 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
   List<Offset>? _detectedCorners;
   bool _isProcessing = false;
   bool _showCropOverlay = false;
+  int _totalRotationDegrees = 0; // Accumulated rotation since last reset
+  bool _hasRotatedAfterCrop = false; // True when crop corners are invalid
   PdfResolution _selectedResolution =
       PdfResolution.size; // Default to Standard (150 DPI)
   bool _isSettingsExpanded = false; // Track if settings panel is expanded
@@ -163,15 +165,15 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
     _applyStepRotation(-90);
   }
 
-  /// Rotate the full (pre-crop) image by [degrees] (±90).
+  /// Rotate the current base image by [degrees] (±90).
   ///
-  /// Rotation resets any active crop: operates on the pre-crop image
-  /// (or current base if no crop was applied), clears crop state, and
-  /// sets corners to cover the entire rotated surface.
+  /// Rotates whatever is currently displayed (including a cropped image).
+  /// Tracks cumulative rotation so that "Reset Crop" can later apply the
+  /// same rotation to the original full image.  After a crop, rotation
+  /// invalidates the crop corners so the crop tool is disabled until a
+  /// reset is performed.
   Future<void> _applyStepRotation(int degrees) async {
-    // Rotate the full image: use pre-crop data if a crop was applied
-    final sourceData = _preCropBaseData ?? _baseImageData;
-    if (sourceData == null) return;
+    if (_baseImageData == null) return;
 
     setState(() {
       _isProcessing = true;
@@ -180,7 +182,7 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
     try {
       final rotationOptions = ImageEditingOptions(rotationDegrees: degrees);
       final rotatedData = await _imageProcessor.applyImageEditing(
-        sourceData,
+        _baseImageData!,
         rotationOptions,
       );
 
@@ -196,18 +198,26 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
         );
       }
 
+      _totalRotationDegrees = (_totalRotationDegrees + degrees) % 360;
+
       setState(() {
         _baseImageData = rotatedData;
         _previewImageData = previewData;
-        _preCropBaseData = null; // Crop is reset
+        // Keep _preCropBaseData for reset crop
         _detectedCorners = null;
         _showCropOverlay = false;
         _editingOptions = _editingOptions.copyWith(cropCorners: null);
         _isProcessing = false;
+        // After rotating a cropped image, corners are no longer valid
+        if (_preCropBaseData != null) {
+          _hasRotatedAfterCrop = true;
+        }
       });
 
-      // Re-detect edges on the rotated full image
-      _detectDocumentEdgesOnData(rotatedData);
+      // Re-detect edges only if no crop was applied (corners still valid)
+      if (!_hasRotatedAfterCrop) {
+        _detectDocumentEdgesOnData(rotatedData);
+      }
     } catch (e) {
       setState(() {
         _isProcessing = false;
@@ -265,7 +275,8 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
     }
   }
 
-  /// Reset crop: restore pre-crop image, clear corners, re-apply active filter.
+  /// Reset crop: restore original image, apply accumulated rotation,
+  /// clear corners, and re-apply active color filter.
   Future<void> _resetCrop() async {
     if (_preCropBaseData == null) return;
 
@@ -274,10 +285,22 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
     });
 
     try {
-      final restored = _preCropBaseData!;
-      Uint8List previewData = restored;
+      // Start from the original pre-crop image
+      Uint8List restored = _preCropBaseData!;
 
-      // Re-apply active color filter on restored image
+      // Apply accumulated rotation so the user keeps the orientation
+      if (_totalRotationDegrees != 0) {
+        final rotationOptions = ImageEditingOptions(
+          rotationDegrees: _totalRotationDegrees,
+        );
+        restored = await _imageProcessor.applyImageEditing(
+          restored,
+          rotationOptions,
+        );
+      }
+
+      // Re-apply active color filter
+      Uint8List previewData = restored;
       if (_editingOptions.colorFilter != ColorFilter.none) {
         final filterOptions = ImageEditingOptions(
           colorFilter: _editingOptions.colorFilter,
@@ -293,12 +316,13 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
         _preCropBaseData = null;
         _detectedCorners = null;
         _showCropOverlay = false;
+        _hasRotatedAfterCrop = false;
         _previewImageData = previewData;
         _editingOptions = _editingOptions.copyWith(cropCorners: null);
         _isProcessing = false;
       });
 
-      // Re-detect edges on the restored image for future crops
+      // Re-detect edges on the restored+rotated image
       _detectDocumentEdgesOnData(restored);
     } catch (e) {
       setState(() {
@@ -419,6 +443,7 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
         _previewImageData = previewData;
         _baseImageData = croppedData;
         _showCropOverlay = false;
+        _hasRotatedAfterCrop = false;
         _editingOptions = _editingOptions.copyWith(
           cropCorners: _detectedCorners,
         );
@@ -440,9 +465,17 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
       _editingOptions = const ImageEditingOptions();
       _previewImageData = widget.initialPreviewData ?? widget.imageData;
       _baseImageData = widget.initialPreviewData ?? widget.imageData;
-      _preCropBaseData = null;
+      _preCropBaseData = widget.initialPreviewData != null
+          ? widget.imageData
+          : null;
+      _detectedCorners = null;
       _showCropOverlay = false;
+      _totalRotationDegrees = 0;
+      _hasRotatedAfterCrop = false;
     });
+
+    // Re-detect edges on the reset image
+    _detectDocumentEdges();
   }
 
   void _confirmEditing() {
@@ -574,15 +607,17 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
                         icon: const Icon(Icons.rotate_right),
                         tooltip: 'Rotate Right',
                       ),
-                      IconButton(
-                        onPressed: _toggleCropMode,
-                        icon: Icon(
-                          _showCropOverlay ? Icons.crop_free : Icons.crop,
+                      // Crop tool: disabled after rotating a cropped image
+                      if (!_hasRotatedAfterCrop)
+                        IconButton(
+                          onPressed: _toggleCropMode,
+                          icon: Icon(
+                            _showCropOverlay ? Icons.crop_free : Icons.crop,
+                          ),
+                          tooltip: _showCropOverlay
+                              ? 'Disable Crop'
+                              : 'Enable Crop',
                         ),
-                        tooltip: _showCropOverlay
-                            ? 'Disable Crop'
-                            : 'Enable Crop',
-                      ),
                       if (_showCropOverlay)
                         IconButton(
                           onPressed: _applyCrop,
@@ -590,6 +625,7 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
                           tooltip: 'Apply Crop',
                           color: Colors.green,
                         ),
+                      // Reset crop: visible when a crop has been applied
                       if (!_showCropOverlay && _preCropBaseData != null)
                         IconButton(
                           onPressed: _resetCrop,
