@@ -220,6 +220,10 @@ lib/src/
 - Flutter ≥ 3.32.0, Dart SDK ≥ 3.8.1
 - Android or iOS device (camera features require a physical device)
 
+## Support
+
+⭐ Star • 🐛 Issue • 🔧 PR • ☕ <https://paypal.me/ErosNardi>
+
 ## License
 
 MIT
