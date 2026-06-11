@@ -5,6 +5,8 @@ import 'app.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  DocumentScannerService().configureStorage(appName: 'DocumentScannerShowcase');
+  DocumentScannerService.instance.configureStorage(
+    appName: 'DocumentScannerShowcase',
+  );
   runApp(const DocumentScannerShowcaseApp());
 }

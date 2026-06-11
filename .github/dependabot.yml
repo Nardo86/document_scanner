@@ -1,0 +1,13 @@
+version: 2
+updates:
+  # Keep GitHub Actions pinned versions current (supply-chain hygiene).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # Surface outdated pub dependencies.
+  - package-ecosystem: "pub"
+    directory: "/"
+    schedule:
+      interval: "weekly"

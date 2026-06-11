@@ -44,10 +44,16 @@ class _PdfPreviewWidgetState extends State<PdfPreviewWidget> {
 
   @override
   void dispose() {
+    // Releases the native PDFium document/handle held by pdfx.
+    _pdfController?.dispose();
     super.dispose();
   }
 
   Future<void> _loadPdfDocument() async {
+    // Dispose any previous controller (e.g. on retry) before replacing it.
+    _pdfController?.dispose();
+    _pdfController = null;
+
     setState(() {
       _error = null;
     });
@@ -208,7 +214,10 @@ class _PdfPreviewWidgetState extends State<PdfPreviewWidget> {
     }
 
     if (_pdfController == null) {
-      if (widget.pdfData == null && widget.pdfPath == null) {
+      // Treat a null OR empty path (with no bytes) as "nothing to show" rather
+      // than spinning the loader forever.
+      final hasPath = widget.pdfPath != null && widget.pdfPath!.isNotEmpty;
+      if (widget.pdfData == null && !hasPath) {
         return _buildNoDataState();
       }
       return _buildLoadingState();
@@ -269,6 +278,12 @@ class _PdfPreviewWidgetState extends State<PdfPreviewWidget> {
                       widget.fallbackImage!,
                       fit: BoxFit.contain,
                       height: 300,
+                      errorBuilder: (context, error, stack) => const SizedBox(
+                        height: 300,
+                        child: Center(
+                          child: Icon(Icons.broken_image, size: 48),
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -353,13 +368,9 @@ class _PdfPreviewWidgetState extends State<PdfPreviewWidget> {
                   ),
                   const SizedBox(height: 24),
                   OutlinedButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        _error = null;
-                        _pdfController = null;
-                      });
-                      _loadPdfDocument();
-                    },
+                    // _loadPdfDocument disposes any existing controller and
+                    // clears the error itself.
+                    onPressed: _loadPdfDocument,
                     icon: const Icon(Icons.refresh),
                     label: const Text('Retry'),
                     style: OutlinedButton.styleFrom(

@@ -56,10 +56,11 @@ void main() {
     test('generates timestamp-based filename as fallback', () {
       final filename = storageHelper.generateFilename(
         documentType: DocumentType.receipt,
-        timestamp: DateTime(2024, 1, 15),
+        timestamp: DateTime(2024, 1, 15, 9, 30, 5),
       );
 
-      expect(filename, '20240115_Receipt');
+      // Date + time + type, so same-day scans do not overwrite each other.
+      expect(filename, '20240115_093005_Receipt');
     });
 
     test('cleans invalid characters from filename', () {
@@ -103,6 +104,39 @@ void main() {
         timestamp: DateTime(2024, 1, 15),
       );
       expect(otherFilename, contains('Scan'));
+    });
+  });
+
+  group('StorageHelper - filename sanitization (path traversal)', () {
+    test('strips directory traversal from custom filename', () {
+      final filename = storageHelper.generateFilename(
+        documentType: DocumentType.document,
+        timestamp: DateTime(2024, 1, 15),
+        customFilename: '../../etc/passwd',
+      );
+      expect(filename, isNot(contains('/')));
+      expect(filename, isNot(contains('..')));
+      expect(filename, 'passwd');
+    });
+
+    test('strips absolute path from suggested filename', () {
+      final filename = storageHelper.generateFilename(
+        documentType: DocumentType.document,
+        timestamp: DateTime(2024, 1, 15),
+        metadata: {'suggestedFilename': '/data/data/com.evil/secret'},
+      );
+      expect(filename, isNot(contains('/')));
+      expect(filename, 'secret');
+    });
+
+    test('refuses to write outside the target directory', () async {
+      // Even if a malicious name slips through, the write is contained.
+      final escaped = await storageHelper.saveImageFile(
+        directory: tempDir,
+        filename: '../../escape',
+        imageData: Uint8List.fromList([1, 2, 3]),
+      );
+      expect(path.isWithin(tempDir.path, escaped), isTrue);
     });
   });
 

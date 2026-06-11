@@ -1,15 +1,27 @@
-import 'dart:typed_data';
 import 'dart:math' as math;
-import 'package:flutter/material.dart';
+import 'dart:typed_data';
+import 'dart:ui' show Offset;
 import 'package:image/image.dart' as img;
 
-/// Result of auto-crop operation
+/// Result of an auto-crop operation.
 class AutoCropResult {
+  /// Cropped (perspective-corrected) image, or the original when [fallbackUsed].
   final Uint8List croppedImageData;
+
+  /// Detected document corners in **original image** pixel coordinates,
+  /// ordered top-left, top-right, bottom-right, bottom-left.
   final List<Offset> corners;
+
+  /// Processing duration in milliseconds (informational).
   final int durationMs;
+
+  /// Detection confidence in `[0, 1]`.
   final double confidence;
+
+  /// True when detection was not confident and the original image was returned.
   final bool fallbackUsed;
+
+  /// Diagnostic metadata.
   final Map<String, dynamic> metadata;
 
   const AutoCropResult({
@@ -22,327 +34,298 @@ class AutoCropResult {
   });
 }
 
-/// Auto-crop service that implements Canny→dilate→largest contour→warp pipeline
+/// Detects a bright document on a darker background (Otsu binarisation +
+/// largest-white-blob), then perspective-corrects it.
+///
+/// This targets the common "printed sheet on a desk" case (see issue #30). It
+/// is intentionally a single, well-understood strategy rather than a brittle
+/// Canny/contour pipeline. All work is pure Dart on [img.Image], so it can run
+/// inside an isolate via `compute`.
 class AutoCropper {
+  /// Long-edge size the detection runs at (for speed); corners are scaled back.
   static const int _maxProcessingDimension = 800;
-  static const int _minContourArea = 10000;
-  static const double _minConfidence = 0.3;
-  static const int _maxProcessingTimeMs = 100;
 
-  /// Perform auto-crop on the given image data
-  ///
-  /// Returns [AutoCropResult] with cropped image, detected corners, and metadata.
-  /// Falls back to bounding box crop if confidence is low or processing takes too long.
+  /// A blob must cover at least this fraction of the frame to be a document.
+  static const double _minBlobRatio = 0.15;
+
+  /// A blob covering more than this is treated as "no contrast" (skip).
+  static const double _maxBlobRatio = 0.97;
+
+  /// Minimum confidence required to actually apply the perspective crop.
+  static const double _minConfidence = 0.5;
+
+  /// Minimum output edge length (px) to avoid degenerate crops.
+  static const int _minOutputDimension = 16;
+
+  /// Perform auto-crop on the given encoded image bytes.
   Future<AutoCropResult> autoCrop(Uint8List imageData) async {
     final stopwatch = Stopwatch()..start();
     final metadata = <String, dynamic>{};
 
+    final original = img.decodeImage(imageData);
+    if (original == null) {
+      throw Exception('Failed to decode image');
+    }
+
+    metadata['originalWidth'] = original.width;
+    metadata['originalHeight'] = original.height;
+
     try {
-      // Decode original image
-      final originalImage = img.decodeImage(imageData);
-      if (originalImage == null) {
-        throw Exception('Failed to decode image');
-      }
+      // Downscale for detection only.
+      final maxDim = math.max(original.width, original.height);
+      final scale = maxDim > _maxProcessingDimension
+          ? _maxProcessingDimension / maxDim
+          : 1.0;
+      final working = scale < 1.0
+          ? img.copyResize(
+              original,
+              width: (original.width * scale).round(),
+              height: (original.height * scale).round(),
+            )
+          : original;
 
-      metadata['originalWidth'] = originalImage.width;
-      metadata['originalHeight'] = originalImage.height;
+      final detection = _detectWhiteBlob(working);
 
-      // Downscale for processing
-      final processingResult = _prepareProcessingImage(originalImage);
-      final workingImage = processingResult.image;
-      final scale = processingResult.scale;
-
-      // Run the detection pipeline
-      final detectionResult = await _runDetectionPipeline(
-        workingImage,
-        stopwatch,
-      );
-
-      if (stopwatch.elapsedMilliseconds > _maxProcessingTimeMs) {
-        return _createBoundingBoxFallback(
-          originalImage,
+      if (detection == null || detection.confidence < _minConfidence) {
+        return _fallback(
+          original,
+          imageData,
           stopwatch,
           metadata,
-          'timeout',
+          detection == null ? 'no_document' : 'low_confidence',
+          detection?.confidence ?? 0.0,
         );
       }
 
-      if (detectionResult.confidence < _minConfidence) {
-        return _createBoundingBoxFallback(
-          originalImage,
-          stopwatch,
-          metadata,
-          'low_confidence',
-        );
-      }
-
-      // Scale corners back to original image dimensions
-      final originalCorners = detectionResult.corners
-          .map((corner) => Offset(corner.dx * scale, corner.dy * scale))
+      // Scale corners back to original resolution.
+      final invScale = scale < 1.0 ? 1.0 / scale : 1.0;
+      final corners = detection.corners
+          .map((c) => Offset(c.dx * invScale, c.dy * invScale))
           .toList();
 
-      // Apply perspective transform
-      final croppedImage = await _applyPerspectiveTransform(
-        originalImage,
-        originalCorners,
-      );
+      final warped = _perspectiveWarp(original, corners);
+      if (warped == null) {
+        return _fallback(
+          original,
+          imageData,
+          stopwatch,
+          metadata,
+          'degenerate_quad',
+          detection.confidence,
+        );
+      }
 
-      final duration = stopwatch.elapsedMilliseconds;
-      metadata['detectionTimeMs'] = duration;
-      metadata['detectionMethod'] = 'contour_warp';
-      metadata['contourArea'] = detectionResult.contourArea;
+      stopwatch.stop();
+      metadata['detectionTimeMs'] = stopwatch.elapsedMilliseconds;
+      metadata['detectionMethod'] = 'otsu_white_blob';
+      metadata['blobRatio'] = detection.blobRatio;
 
       return AutoCropResult(
         croppedImageData: Uint8List.fromList(
-          img.encodeJpg(croppedImage, quality: 95),
+          img.encodeJpg(warped, quality: 95),
         ),
-        corners: originalCorners,
-        durationMs: duration,
-        confidence: detectionResult.confidence,
+        corners: corners,
+        durationMs: stopwatch.elapsedMilliseconds,
+        confidence: detection.confidence,
         fallbackUsed: false,
         metadata: metadata,
       );
     } catch (e) {
-      // Fallback to bounding box on any error
-      final originalImage = img.decodeImage(imageData);
-      if (originalImage != null) {
-        return _createBoundingBoxFallback(
-          originalImage,
-          stopwatch,
-          metadata,
-          'error: $e',
-        );
-      }
-      rethrow;
-    }
-  }
-
-  /// Prepare downscaled image for processing
-  _ProcessingImage _prepareProcessingImage(img.Image originalImage) {
-    final maxDimension = math.max(originalImage.width, originalImage.height);
-    final scale = maxDimension > _maxProcessingDimension
-        ? _maxProcessingDimension / maxDimension
-        : 1.0;
-
-    if (scale < 1.0) {
-      final newWidth = (originalImage.width * scale).round();
-      final newHeight = (originalImage.height * scale).round();
-      final resizedImage = img.copyResize(
-        originalImage,
-        width: newWidth,
-        height: newHeight,
+      return _fallback(
+        original,
+        imageData,
+        stopwatch,
+        metadata,
+        'error: $e',
+        0.0,
       );
-      return _ProcessingImage(resizedImage, 1.0 / scale);
     }
-
-    return _ProcessingImage(originalImage, 1.0);
   }
 
-  /// Run the complete detection pipeline.
+  /// Detect document corners (in original-image coordinates) **without**
+  /// warping. Returns null when no confident document is found.
   ///
-  /// Tries Otsu-based white blob detection first (optimised for white sheets
-  /// on dark backgrounds). If that yields a high-confidence result (≥ 0.5) it
-  /// is returned immediately. Otherwise falls back to the original Canny →
-  /// dilate → contour pipeline and picks the best of the two.
-  Future<_DetectionResult> _runDetectionPipeline(
-    img.Image image,
-    Stopwatch stopwatch,
-  ) async {
-    // --- Strategy 1: Otsu white-blob detection ---
-    final otsuResult = _detectWhiteBlob(image);
-    if (otsuResult.confidence >= 0.5) {
-      return otsuResult;
-    }
+  /// Useful for pre-positioning the crop handles in the editor.
+  ({List<Offset> corners, double confidence})? detectCorners(
+    Uint8List imageData,
+  ) {
+    final original = img.decodeImage(imageData);
+    if (original == null) return null;
 
-    // --- Strategy 2: Canny edge detection (original pipeline) ---
-    final grayscale = img.grayscale(image);
-    final blurred = img.gaussianBlur(grayscale, radius: 2);
-    final edges = _cannyEdgeDetection(blurred);
-    final dilated = _morphologicalDilation(edges);
-    final cannyResult = _findLargestContour(dilated, image.width, image.height);
+    final maxDim = math.max(original.width, original.height);
+    final scale = maxDim > _maxProcessingDimension
+        ? _maxProcessingDimension / maxDim
+        : 1.0;
+    final working = scale < 1.0
+        ? img.copyResize(
+            original,
+            width: (original.width * scale).round(),
+            height: (original.height * scale).round(),
+          )
+        : original;
 
-    // Return whichever strategy scored higher
-    if (otsuResult.confidence > cannyResult.confidence) {
-      return otsuResult;
-    }
-    return cannyResult;
+    final detection = _detectWhiteBlob(working);
+    if (detection == null) return null;
+
+    final invScale = scale < 1.0 ? 1.0 / scale : 1.0;
+    final corners = detection.corners
+        .map((c) => Offset(c.dx * invScale, c.dy * invScale))
+        .toList();
+    return (corners: corners, confidence: detection.confidence);
   }
 
   // ---------------------------------------------------------------------------
-  // Otsu white-blob detection
+  // Detection
   // ---------------------------------------------------------------------------
 
-  /// Detect a white document on a darker background using Otsu binarisation.
-  ///
-  /// 1. Compute luminance histogram and Otsu threshold.
-  /// 2. Binarise: pixels brighter than the threshold are "white" (foreground).
-  /// 3. Find the largest connected white blob.
-  /// 4. If the blob covers ≥ 15 % of the image and is roughly rectangular,
-  ///    extract its four extreme corners and score confidence.
-  _DetectionResult _detectWhiteBlob(img.Image image) {
+  _Detection? _detectWhiteBlob(img.Image image) {
     final width = image.width;
     final height = image.height;
-    final totalPixels = width * height;
+    final total = width * height;
+    if (total == 0) return null;
 
-    // --- Luminance histogram ---
+    // Luminance + histogram (flat typed arrays; rows are NOT aliased).
+    final luminance = Uint8List(total);
     final histogram = List<int>.filled(256, 0);
-    final luminance = List<int>.filled(totalPixels, 0);
-
-    int idx = 0;
-    for (int y = 0; y < height; y++) {
-      for (int x = 0; x < width; x++) {
+    var idx = 0;
+    for (var y = 0; y < height; y++) {
+      for (var x = 0; x < width; x++) {
         final p = image.getPixel(x, y);
         final lum = (0.299 * p.r + 0.587 * p.g + 0.114 * p.b).round().clamp(
           0,
           255,
         );
-        luminance[idx] = lum;
+        luminance[idx++] = lum;
         histogram[lum]++;
-        idx++;
       }
     }
 
-    // --- Otsu threshold ---
-    final threshold = _calculateOtsuThreshold(histogram, totalPixels);
+    final threshold = _otsuThreshold(histogram, total);
 
-    // --- Binarise and find connected white blobs ---
-    final labels = List<int>.filled(totalPixels, 0);
-    int nextLabel = 1;
-    final blobSizes = <int, int>{}; // label → pixel count
+    // Connected components over "bright" pixels (iterative BFS — no recursion).
+    final labels = Int32List(total);
+    final queue = <int>[];
+    var bestLabel = 0;
+    var bestSize = 0;
+    var nextLabel = 0;
 
-    for (int y = 0; y < height; y++) {
-      for (int x = 0; x < width; x++) {
-        final i = y * width + x;
-        if (luminance[i] <= threshold || labels[i] != 0) continue;
-
-        // BFS flood fill
-        final label = nextLabel++;
-        int count = 0;
-        final queue = <int>[i];
-        labels[i] = label;
-
-        while (queue.isNotEmpty) {
-          final ci = queue.removeLast();
-          count++;
-          final cx = ci % width;
-          final cy = ci ~/ width;
-
-          // 4-connected neighbours
-          for (final d in [
-            [0, -1],
-            [0, 1],
-            [-1, 0],
-            [1, 0],
-          ]) {
-            final nx = cx + d[0];
-            final ny = cy + d[1];
-            if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
-            final ni = ny * width + nx;
-            if (labels[ni] != 0 || luminance[ni] <= threshold) continue;
-            labels[ni] = label;
-            queue.add(ni);
-          }
+    for (var seed = 0; seed < total; seed++) {
+      if (luminance[seed] <= threshold || labels[seed] != 0) continue;
+      nextLabel++;
+      var size = 0;
+      labels[seed] = nextLabel;
+      queue
+        ..clear()
+        ..add(seed);
+      while (queue.isNotEmpty) {
+        final ci = queue.removeLast();
+        size++;
+        final cx = ci % width;
+        final cy = ci ~/ width;
+        // 4-connected neighbours.
+        if (cx > 0) {
+          _visit(ci - 1, nextLabel, threshold, luminance, labels, queue);
         }
-        blobSizes[label] = count;
-      }
-    }
-
-    if (blobSizes.isEmpty) {
-      return _DetectionResult([], 0.0, 0.0);
-    }
-
-    // --- Largest blob ---
-    int bestLabel = blobSizes.keys.first;
-    int bestSize = blobSizes[bestLabel]!;
-    for (final entry in blobSizes.entries) {
-      if (entry.value > bestSize) {
-        bestSize = entry.value;
-        bestLabel = entry.key;
-      }
-    }
-
-    final blobRatio = bestSize / totalPixels;
-    if (blobRatio < 0.15) {
-      // Blob too small — not a document
-      return _DetectionResult([], 0.0, bestSize.toDouble());
-    }
-    if (blobRatio > 0.95) {
-      // Blob covers almost the entire image — no real contrast between
-      // document and background (e.g. uniform image). Skip detection.
-      return _DetectionResult([], 0.0, bestSize.toDouble());
-    }
-
-    // --- Extract blob boundary pixels ---
-    final boundaryPoints = <Point>[];
-    for (int y = 0; y < height; y++) {
-      for (int x = 0; x < width; x++) {
-        if (labels[y * width + x] != bestLabel) continue;
-        // A boundary pixel has at least one non-blob 4-connected neighbour
-        bool isBoundary = false;
-        for (final d in [
-          [0, -1],
-          [0, 1],
-          [-1, 0],
-          [1, 0],
-        ]) {
-          final nx = x + d[0];
-          final ny = y + d[1];
-          if (nx < 0 || nx >= width || ny < 0 || ny >= height) {
-            isBoundary = true;
-            break;
-          }
-          if (labels[ny * width + nx] != bestLabel) {
-            isBoundary = true;
-            break;
-          }
+        if (cx < width - 1) {
+          _visit(ci + 1, nextLabel, threshold, luminance, labels, queue);
         }
-        if (isBoundary) boundaryPoints.add(Point(x, y));
+        if (cy > 0) {
+          _visit(ci - width, nextLabel, threshold, luminance, labels, queue);
+        }
+        if (cy < height - 1) {
+          _visit(ci + width, nextLabel, threshold, luminance, labels, queue);
+        }
+      }
+      if (size > bestSize) {
+        bestSize = size;
+        bestLabel = nextLabel;
       }
     }
 
-    if (boundaryPoints.length < 4) {
-      return _DetectionResult([], 0.0, bestSize.toDouble());
+    if (bestLabel == 0) return null;
+
+    final blobRatio = bestSize / total;
+    if (blobRatio < _minBlobRatio || blobRatio > _maxBlobRatio) {
+      return null;
     }
 
-    // --- Extract 4 corners from boundary ---
-    final corners = _approximateContourToQuad(boundaryPoints, width, height);
-
-    if (corners.length != 4) {
-      return _DetectionResult([], 0.0, bestSize.toDouble());
+    // Extreme corners of the blob (robust 4-corner extraction):
+    //   TL = min(x+y), BR = max(x+y), TR = max(x-y), BL = min(x-y).
+    double minSum = double.infinity, maxSum = -double.infinity;
+    double minDiff = double.infinity, maxDiff = -double.infinity;
+    Offset tl = Offset.zero,
+        tr = Offset.zero,
+        br = Offset.zero,
+        bl = Offset.zero;
+    idx = 0;
+    for (var y = 0; y < height; y++) {
+      for (var x = 0; x < width; x++) {
+        if (labels[idx++] != bestLabel) continue;
+        final s = x + y.toDouble();
+        final d = x - y.toDouble();
+        if (s < minSum) {
+          minSum = s;
+          tl = Offset(x.toDouble(), y.toDouble());
+        }
+        if (s > maxSum) {
+          maxSum = s;
+          br = Offset(x.toDouble(), y.toDouble());
+        }
+        if (d > maxDiff) {
+          maxDiff = d;
+          tr = Offset(x.toDouble(), y.toDouble());
+        }
+        if (d < minDiff) {
+          minDiff = d;
+          bl = Offset(x.toDouble(), y.toDouble());
+        }
+      }
     }
 
-    final confidence = _calculateConfidence(
-      corners,
-      bestSize.toDouble(),
-      totalPixels.toDouble(),
-    );
+    final corners = <Offset>[tl, tr, br, bl];
+    final quadArea = _polygonArea(corners);
+    if (quadArea <= 0) return null;
 
-    return _DetectionResult(corners, confidence, bestSize.toDouble());
+    // Confidence: rectangularity (right angles) × solidity (blob fills its
+    // quad) gated by sensible coverage.
+    final rect = _rectangularity(corners);
+    final solidity = (bestSize / quadArea).clamp(0.0, 1.0);
+    final confidence = (0.5 * rect + 0.5 * solidity).clamp(0.0, 1.0);
+
+    return _Detection(corners, confidence, blobRatio);
   }
 
-  /// Otsu threshold calculation (same algorithm as ImageProcessor).
-  static int _calculateOtsuThreshold(List<int> histogram, int totalPixels) {
-    double sum = 0;
-    for (int i = 0; i < 256; i++) {
+  static void _visit(
+    int i,
+    int label,
+    int threshold,
+    Uint8List luminance,
+    Int32List labels,
+    List<int> queue,
+  ) {
+    if (labels[i] != 0 || luminance[i] <= threshold) return;
+    labels[i] = label;
+    queue.add(i);
+  }
+
+  static int _otsuThreshold(List<int> histogram, int total) {
+    var sum = 0.0;
+    for (var i = 0; i < 256; i++) {
       sum += i * histogram[i];
     }
-
-    double sumB = 0;
-    int weightB = 0;
-    double maxVariance = 0;
-    int threshold = 0;
-
-    for (int i = 0; i < 256; i++) {
+    var sumB = 0.0;
+    var weightB = 0;
+    var maxVariance = 0.0;
+    var threshold = 0;
+    for (var i = 0; i < 256; i++) {
       weightB += histogram[i];
       if (weightB == 0) continue;
-      final weightF = totalPixels - weightB;
+      final weightF = total - weightB;
       if (weightF == 0) break;
-
       sumB += i * histogram[i];
       final meanB = sumB / weightB;
       final meanF = (sum - sumB) / weightF;
       final variance = weightB * weightF * (meanB - meanF) * (meanB - meanF);
-
       if (variance > maxVariance) {
         maxVariance = variance;
         threshold = i;
@@ -351,724 +334,194 @@ class AutoCropper {
     return threshold;
   }
 
-  /// Canny edge detection implementation
-  img.Image _cannyEdgeDetection(img.Image image) {
-    // Apply Sobel operators
-    final sobelX = _sobelX(image);
-    final sobelY = _sobelY(image);
-
-    // Calculate gradient magnitude and direction
-    final magnitude = img.Image(width: image.width, height: image.height);
-    final direction = List<List<double>>.filled(
-      image.height,
-      List<double>.filled(image.width, 0.0),
-    );
-
-    double maxMagnitude = 0.0;
-    for (int y = 0; y < image.height; y++) {
-      for (int x = 0; x < image.width; x++) {
-        final gx = img.getLuminance(sobelX.getPixel(x, y));
-        final gy = img.getLuminance(sobelY.getPixel(x, y));
-        final mag = math.sqrt(gx * gx + gy * gy);
-        final angle = math.atan2(gy, gx);
-
-        magnitude.setPixel(
-          x,
-          y,
-          img.ColorRgb8(mag.round(), mag.round(), mag.round()),
-        );
-        direction[y][x] = angle;
-        maxMagnitude = math.max(maxMagnitude, mag);
-      }
+  /// 1.0 when all four interior angles are 90°, decreasing with deviation.
+  double _rectangularity(List<Offset> c) {
+    var deviation = 0.0;
+    for (var i = 0; i < 4; i++) {
+      final prev = c[(i + 3) % 4];
+      final cur = c[i];
+      final next = c[(i + 1) % 4];
+      final v1 = prev - cur;
+      final v2 = next - cur;
+      final denom = v1.distance * v2.distance;
+      if (denom == 0) return 0.0;
+      final cos = ((v1.dx * v2.dx + v1.dy * v2.dy) / denom).clamp(-1.0, 1.0);
+      final angle = math.acos(cos);
+      deviation += (angle - math.pi / 2).abs();
     }
-
-    // Non-maximum suppression
-    final suppressed = _nonMaximumSuppression(magnitude, direction);
-
-    // Hysteresis thresholding
-    final highThreshold = maxMagnitude * 0.15;
-    final lowThreshold = highThreshold * 0.5;
-
-    return _hysteresisThresholding(suppressed, lowThreshold, highThreshold);
+    final avg = deviation / 4.0;
+    return math.max(0.0, 1.0 - avg / (math.pi / 4));
   }
 
-  /// Sobel X operator
-  img.Image _sobelX(img.Image image) {
-    final kernel = [
-      [-1, 0, 1],
-      [-2, 0, 2],
-      [-1, 0, 1],
-    ];
-    return _convolution(image, kernel);
-  }
-
-  /// Sobel Y operator
-  img.Image _sobelY(img.Image image) {
-    final kernel = [
-      [-1, -2, -1],
-      [0, 0, 0],
-      [1, 2, 1],
-    ];
-    return _convolution(image, kernel);
-  }
-
-  /// Apply convolution kernel to image
-  img.Image _convolution(img.Image image, List<List<int>> kernel) {
-    final result = img.Image(width: image.width, height: image.height);
-    final kernelSize = kernel.length;
-    final offset = kernelSize ~/ 2;
-
-    for (int y = offset; y < image.height - offset; y++) {
-      for (int x = offset; x < image.width - offset; x++) {
-        double sum = 0.0;
-
-        for (int ky = 0; ky < kernelSize; ky++) {
-          for (int kx = 0; kx < kernelSize; kx++) {
-            final pixel = img.getLuminance(
-              image.getPixel(x + kx - offset, y + ky - offset),
-            );
-            sum += pixel * kernel[ky][kx];
-          }
-        }
-
-        final value = sum.abs().clamp(0, 255).round();
-        result.setPixel(x, y, img.ColorRgb8(value, value, value));
-      }
+  double _polygonArea(List<Offset> pts) {
+    var area = 0.0;
+    for (var i = 0; i < pts.length; i++) {
+      final a = pts[i];
+      final b = pts[(i + 1) % pts.length];
+      area += a.dx * b.dy - b.dx * a.dy;
     }
-
-    return result;
-  }
-
-  /// Non-maximum suppression
-  img.Image _nonMaximumSuppression(
-    img.Image magnitude,
-    List<List<double>> direction,
-  ) {
-    final result = img.Image(width: magnitude.width, height: magnitude.height);
-
-    for (int y = 1; y < magnitude.height - 1; y++) {
-      for (int x = 1; x < magnitude.width - 1; x++) {
-        final angle = direction[y][x];
-        final currentMag = img.getLuminance(magnitude.getPixel(x, y));
-
-        // Quantize angle to 4 directions
-        double q = 255, r = 255;
-
-        if ((angle >= -math.pi / 8 && angle < math.pi / 8) ||
-            (angle >= 7 * math.pi / 8 || angle < -7 * math.pi / 8)) {
-          // Horizontal edge
-          q = img.getLuminance(magnitude.getPixel(x + 1, y)).toDouble();
-          r = img.getLuminance(magnitude.getPixel(x - 1, y)).toDouble();
-        } else if ((angle >= math.pi / 8 && angle < 3 * math.pi / 8) ||
-            (angle >= -7 * math.pi / 8 && angle < -5 * math.pi / 8)) {
-          // 45-degree edge
-          q = img.getLuminance(magnitude.getPixel(x + 1, y + 1)).toDouble();
-          r = img.getLuminance(magnitude.getPixel(x - 1, y - 1)).toDouble();
-        } else if ((angle >= 3 * math.pi / 8 && angle < 5 * math.pi / 8) ||
-            (angle >= -5 * math.pi / 8 && angle < -3 * math.pi / 8)) {
-          // Vertical edge
-          q = img.getLuminance(magnitude.getPixel(x, y + 1)).toDouble();
-          r = img.getLuminance(magnitude.getPixel(x, y - 1)).toDouble();
-        } else if ((angle >= 5 * math.pi / 8 && angle < 7 * math.pi / 8) ||
-            (angle >= -3 * math.pi / 8 && angle < -math.pi / 8)) {
-          // 135-degree edge
-          q = img.getLuminance(magnitude.getPixel(x + 1, y - 1)).toDouble();
-          r = img.getLuminance(magnitude.getPixel(x - 1, y + 1)).toDouble();
-        }
-
-        final value = (currentMag >= q && currentMag >= r)
-            ? currentMag.round()
-            : 0;
-        result.setPixel(x, y, img.ColorRgb8(value, value, value));
-      }
-    }
-
-    return result;
-  }
-
-  /// Hysteresis thresholding
-  img.Image _hysteresisThresholding(
-    img.Image image,
-    double lowThreshold,
-    double highThreshold,
-  ) {
-    final result = img.Image(width: image.width, height: image.height);
-    final visited = List<List<bool>>.filled(
-      image.height,
-      List<bool>.filled(image.width, false),
-    );
-
-    // First pass: mark strong edges
-    final strongEdges = <Point>[];
-    for (int y = 0; y < image.height; y++) {
-      for (int x = 0; x < image.width; x++) {
-        final value = img.getLuminance(image.getPixel(x, y));
-        if (value >= highThreshold) {
-          strongEdges.add(Point(x, y));
-        }
-      }
-    }
-
-    // Second pass: trace edges from strong pixels
-    for (final point in strongEdges) {
-      _traceEdge(image, result, visited, point.x, point.y, lowThreshold);
-    }
-
-    return result;
-  }
-
-  /// Trace edge from a starting point
-  void _traceEdge(
-    img.Image image,
-    img.Image result,
-    List<List<bool>> visited,
-    int x,
-    int y,
-    double lowThreshold,
-  ) {
-    if (x < 0 ||
-        x >= image.width ||
-        y < 0 ||
-        y >= image.height ||
-        visited[y][x]) {
-      return;
-    }
-
-    visited[y][x] = true;
-    final value = img.getLuminance(image.getPixel(x, y));
-
-    if (value >= lowThreshold) {
-      result.setPixel(x, y, img.ColorRgb8(255, 255, 255));
-
-      // Check 8-connected neighbors
-      for (int dy = -1; dy <= 1; dy++) {
-        for (int dx = -1; dx <= 1; dx++) {
-          if (dx == 0 && dy == 0) continue;
-          _traceEdge(image, result, visited, x + dx, y + dy, lowThreshold);
-        }
-      }
-    }
-  }
-
-  /// Morphological dilation to connect edge fragments
-  img.Image _morphologicalDilation(img.Image image) {
-    final kernel = [
-      [1, 1, 1],
-      [1, 1, 1],
-      [1, 1, 1],
-    ];
-    final convolved = _convolution(image, kernel);
-    final result = img.Image(width: image.width, height: image.height);
-
-    for (int y = 0; y < image.height; y++) {
-      for (int x = 0; x < image.width; x++) {
-        final pixel = convolved.getPixel(x, y);
-        final value = pixel.r > 128 ? 255 : 0;
-        result.setPixel(x, y, img.ColorRgb8(value, value, value));
-      }
-    }
-
-    return result;
-  }
-
-  /// Find largest contour and extract quadrilateral
-  _DetectionResult _findLargestContour(img.Image image, int width, int height) {
-    final contours = _findContours(image);
-
-    if (contours.isEmpty) {
-      return _DetectionResult([], 0.0, 0.0);
-    }
-
-    // Find largest contour by area
-    var largestContour = contours.first;
-    var maxArea = _calculateContourArea(largestContour);
-
-    for (final contour in contours.skip(1)) {
-      final area = _calculateContourArea(contour);
-      if (area > maxArea) {
-        maxArea = area;
-        largestContour = contour;
-      }
-    }
-
-    if (maxArea < _minContourArea) {
-      return _DetectionResult([], 0.0, maxArea);
-    }
-
-    // Approximate contour to quadrilateral
-    final corners = _approximateContourToQuad(largestContour, width, height);
-    final confidence = _calculateConfidence(
-      corners,
-      maxArea,
-      (width * height).toDouble(),
-    );
-
-    return _DetectionResult(corners, confidence, maxArea);
-  }
-
-  /// Find contours in binary image
-  List<List<Point>> _findContours(img.Image image) {
-    final contours = <List<Point>>[];
-    final visited = List<List<bool>>.filled(
-      image.height,
-      List<bool>.filled(image.width, false),
-    );
-
-    for (int y = 0; y < image.height; y++) {
-      for (int x = 0; x < image.width; x++) {
-        final pixel = img.getLuminance(image.getPixel(x, y));
-        if (pixel > 128 && !visited[y][x]) {
-          final contour = _traceContour(image, visited, x, y);
-          if (contour.length > 10) {
-            // Filter small contours
-            contours.add(contour);
-          }
-        }
-      }
-    }
-
-    return contours;
-  }
-
-  /// Trace a single contour
-  List<Point> _traceContour(
-    img.Image image,
-    List<List<bool>> visited,
-    int startX,
-    int startY,
-  ) {
-    final contour = <Point>[];
-    final stack = <Point>[Point(startX, startY)];
-
-    while (stack.isNotEmpty) {
-      final point = stack.removeLast();
-      final x = point.x;
-      final y = point.y;
-
-      if (x < 0 ||
-          x >= image.width ||
-          y < 0 ||
-          y >= image.height ||
-          visited[y][x]) {
-        continue;
-      }
-
-      final pixel = img.getLuminance(image.getPixel(x, y));
-      if (pixel <= 128) {
-        continue;
-      }
-
-      visited[y][x] = true;
-      contour.add(point);
-
-      // Add 8-connected neighbors
-      for (int dy = -1; dy <= 1; dy++) {
-        for (int dx = -1; dx <= 1; dx++) {
-          if (dx == 0 && dy == 0) continue;
-          stack.add(Point(x + dx, y + dy));
-        }
-      }
-    }
-
-    return contour;
-  }
-
-  /// Calculate contour area using shoelace formula
-  double _calculateContourArea(List<Point> contour) {
-    if (contour.length < 3) return 0.0;
-
-    double area = 0.0;
-    for (int i = 0; i < contour.length; i++) {
-      final p1 = contour[i];
-      final p2 = contour[(i + 1) % contour.length];
-      area += (p1.x * p2.y - p2.x * p1.y);
-    }
-
     return area.abs() / 2.0;
   }
 
-  /// Approximate contour to quadrilateral using Douglas-Peucker algorithm
-  List<Offset> _approximateContourToQuad(
-    List<Point> contour,
-    int width,
-    int height,
-  ) {
-    if (contour.length <= 4) {
-      return contour
-          .map((p) => Offset(p.x.toDouble(), p.y.toDouble()))
-          .toList();
-    }
+  // ---------------------------------------------------------------------------
+  // Perspective warp (real homography + bilinear sampling, pure Dart)
+  // ---------------------------------------------------------------------------
 
-    // Simplified approximation: find extreme points
-    double minX = width.toDouble(), minY = height.toDouble();
-    double maxX = 0.0, maxY = 0.0;
+  img.Image? _perspectiveWarp(img.Image src, List<Offset> quad) {
+    final wTop = (quad[1] - quad[0]).distance;
+    final wBot = (quad[2] - quad[3]).distance;
+    final hLeft = (quad[3] - quad[0]).distance;
+    final hRight = (quad[2] - quad[1]).distance;
 
-    for (final point in contour) {
-      minX = math.min(minX, point.x.toDouble());
-      minY = math.min(minY, point.y.toDouble());
-      maxX = math.max(maxX, point.x.toDouble());
-      maxY = math.max(maxY, point.y.toDouble());
-    }
+    final outW = math.max(wTop, wBot).round();
+    final outH = math.max(hLeft, hRight).round();
+    if (outW < _minOutputDimension || outH < _minOutputDimension) return null;
 
-    // Find corners more precisely
-    final corners = <Offset>[];
-    const margin = 0.1; // 10% margin from edges
+    final dest = <Offset>[
+      const Offset(0, 0),
+      Offset(outW.toDouble(), 0),
+      Offset(outW.toDouble(), outH.toDouble()),
+      Offset(0, outH.toDouble()),
+    ];
 
-    // Top-left corner
-    Point? topLeft;
-    double minDist = double.infinity;
-    for (final point in contour) {
-      final dist = math.sqrt(
-        math.pow(point.x - minX, 2) + math.pow(point.y - minY, 2),
-      );
-      if (dist < minDist &&
-          point.x < minX + (maxX - minX) * margin &&
-          point.y < minY + (maxY - minY) * margin) {
-        minDist = dist;
-        topLeft = point;
+    // H maps destination (output) -> source (quad), so each output pixel maps
+    // back into the source for sampling.
+    final h = _homography(dest, quad);
+    if (h == null) return null;
+
+    final out = img.Image(width: outW, height: outH);
+    final maxX = src.width - 1;
+    final maxY = src.height - 1;
+    for (var y = 0; y < outH; y++) {
+      for (var x = 0; x < outW; x++) {
+        final w = h[6] * x + h[7] * y + h[8];
+        if (w == 0) continue;
+        final sx = (h[0] * x + h[1] * y + h[2]) / w;
+        final sy = (h[3] * x + h[4] * y + h[5]) / w;
+        if (sx < 0 || sy < 0 || sx > maxX || sy > maxY) {
+          out.setPixel(x, y, img.ColorRgb8(255, 255, 255));
+          continue;
+        }
+        out.setPixel(x, y, _bilinear(src, sx, sy));
       }
     }
-    if (topLeft != null)
-      corners.add(Offset(topLeft.x.toDouble(), topLeft.y.toDouble()));
-
-    // Top-right corner
-    Point? topRight;
-    minDist = double.infinity;
-    for (final point in contour) {
-      final dist = math.sqrt(
-        math.pow(point.x - maxX, 2) + math.pow(point.y - minY, 2),
-      );
-      if (dist < minDist &&
-          point.x > maxX - (maxX - minX) * margin &&
-          point.y < minY + (maxY - minY) * margin) {
-        minDist = dist;
-        topRight = point;
-      }
-    }
-    if (topRight != null)
-      corners.add(Offset(topRight.x.toDouble(), topRight.y.toDouble()));
-
-    // Bottom-right corner
-    Point? bottomRight;
-    minDist = double.infinity;
-    for (final point in contour) {
-      final dist = math.sqrt(
-        math.pow(point.x - maxX, 2) + math.pow(point.y - maxY, 2),
-      );
-      if (dist < minDist &&
-          point.x > maxX - (maxX - minX) * margin &&
-          point.y > maxY - (maxY - minY) * margin) {
-        minDist = dist;
-        bottomRight = point;
-      }
-    }
-    if (bottomRight != null)
-      corners.add(Offset(bottomRight.x.toDouble(), bottomRight.y.toDouble()));
-
-    // Bottom-left corner
-    Point? bottomLeft;
-    minDist = double.infinity;
-    for (final point in contour) {
-      final dist = math.sqrt(
-        math.pow(point.x - minX, 2) + math.pow(point.y - maxY, 2),
-      );
-      if (dist < minDist &&
-          point.x < minX + (maxX - minX) * margin &&
-          point.y > maxY - (maxY - minY) * margin) {
-        minDist = dist;
-        bottomLeft = point;
-      }
-    }
-    if (bottomLeft != null)
-      corners.add(Offset(bottomLeft.x.toDouble(), bottomLeft.y.toDouble()));
-
-    return corners.length == 4 ? _orderCorners(corners) : [];
+    return out;
   }
 
-  /// Order corners in clockwise direction starting from top-left
-  List<Offset> _orderCorners(List<Offset> corners) {
-    if (corners.length != 4) return corners;
+  img.Color _bilinear(img.Image src, double x, double y) {
+    final x1 = x.floor();
+    final y1 = y.floor();
+    final x2 = math.min(x1 + 1, src.width - 1);
+    final y2 = math.min(y1 + 1, src.height - 1);
+    final dx = x - x1;
+    final dy = y - y1;
 
-    // Calculate center point
-    final centerX = corners.map((c) => c.dx).reduce((a, b) => a + b) / 4;
-    final centerY = corners.map((c) => c.dy).reduce((a, b) => a + b) / 4;
+    final p11 = src.getPixel(x1, y1);
+    final p21 = src.getPixel(x2, y1);
+    final p12 = src.getPixel(x1, y2);
+    final p22 = src.getPixel(x2, y2);
 
-    // Sort corners by angle from center
-    final sortedCorners = List<Offset>.from(corners);
-    sortedCorners.sort((a, b) {
-      final angleA = math.atan2(a.dy - centerY, a.dx - centerX);
-      final angleB = math.atan2(b.dy - centerY, b.dx - centerX);
-      return angleA.compareTo(angleB);
-    });
-
-    // Find top-left corner (minimum x + y)
-    int topLeftIndex = 0;
-    double minSum = sortedCorners[0].dx + sortedCorners[0].dy;
-    for (int i = 1; i < 4; i++) {
-      final sum = sortedCorners[i].dx + sortedCorners[i].dy;
-      if (sum < minSum) {
-        minSum = sum;
-        topLeftIndex = i;
-      }
+    double lerp(num a, num b, num c, num d) {
+      final top = a * (1 - dx) + b * dx;
+      final bot = c * (1 - dx) + d * dx;
+      return top * (1 - dy) + bot * dy;
     }
 
-    // Reorder to start from top-left and go clockwise
-    final ordered = <Offset>[];
-    for (int i = 0; i < 4; i++) {
-      ordered.add(sortedCorners[(topLeftIndex + i) % 4]);
-    }
-
-    return ordered;
-  }
-
-  /// Calculate confidence score for detected quadrilateral
-  double _calculateConfidence(
-    List<Offset> corners,
-    double contourArea,
-    double imageArea,
-  ) {
-    if (corners.length != 4) return 0.0;
-
-    // Calculate quadrilateral area
-    final quadArea = _calculateQuadrilateralArea(corners);
-
-    // Area ratio confidence
-    final areaRatio = quadArea / imageArea;
-    final areaConfidence = math.min(
-      areaRatio / 0.5,
-      1.0,
-    ); // Ideal is 50% of image
-
-    // Shape confidence (how close to a rectangle)
-    final shapeConfidence = _calculateShapeConfidence(corners);
-
-    return (areaConfidence + shapeConfidence) / 2.0;
-  }
-
-  /// Calculate quadrilateral area
-  double _calculateQuadrilateralArea(List<Offset> corners) {
-    if (corners.length != 4) return 0.0;
-
-    double area = 0.0;
-    for (int i = 0; i < 4; i++) {
-      final p1 = corners[i];
-      final p2 = corners[(i + 1) % 4];
-      area += (p1.dx * p2.dy - p2.dx * p1.dy);
-    }
-
-    return area.abs() / 2.0;
-  }
-
-  /// Calculate shape confidence (how rectangular the quadrilateral is)
-  double _calculateShapeConfidence(List<Offset> corners) {
-    if (corners.length != 4) return 0.0;
-
-    // Calculate angles
-    final angles = <double>[];
-    for (int i = 0; i < 4; i++) {
-      final p1 = corners[i];
-      final p2 = corners[(i + 1) % 4];
-      final p3 = corners[(i + 2) % 4];
-
-      final v1 = Offset(p1.dx - p2.dx, p1.dy - p2.dy);
-      final v2 = Offset(p3.dx - p2.dx, p3.dy - p2.dy);
-
-      final angle =
-          (v1.dx * v2.dx + v1.dy * v2.dy) /
-          (math.sqrt(v1.dx * v1.dx + v1.dy * v1.dy) *
-              math.sqrt(v2.dx * v2.dx + v2.dy * v2.dy));
-      angles.add(math.acos(angle.clamp(-1.0, 1.0)));
-    }
-
-    // Calculate how close angles are to 90 degrees
-    double angleDeviation = 0.0;
-    for (final angle in angles) {
-      angleDeviation += (angle - math.pi / 2).abs();
-    }
-
-    final avgDeviation = angleDeviation / 4.0;
-    return math.max(
-      0.0,
-      1.0 - (avgDeviation / (math.pi / 4)),
-    ); // Normalize to 0-1
-  }
-
-  /// Apply perspective transform to crop the image
-  Future<img.Image> _applyPerspectiveTransform(
-    img.Image image,
-    List<Offset> corners,
-  ) async {
-    if (corners.length != 4) {
-      // Fallback to bounding box
-      return _cropToBoundingBox(image);
-    }
-
-    // Calculate output dimensions
-    final outputSize = _calculateOutputSize(corners);
-    final outputWidth = outputSize.width.toInt();
-    final outputHeight = outputSize.height.toInt();
-
-    final result = img.Image(width: outputWidth, height: outputHeight);
-
-    // Calculate perspective transform matrix
-    final matrix = _calculatePerspectiveMatrix(
-      corners,
-      outputWidth,
-      outputHeight,
+    return img.ColorRgb8(
+      lerp(p11.r, p21.r, p12.r, p22.r).round().clamp(0, 255),
+      lerp(p11.g, p21.g, p12.g, p22.g).round().clamp(0, 255),
+      lerp(p11.b, p21.b, p12.b, p22.b).round().clamp(0, 255),
     );
+  }
 
-    // Apply transform
-    for (int y = 0; y < outputHeight; y++) {
-      for (int x = 0; x < outputWidth; x++) {
-        final sourcePoint = _inverseTransform(
-          x.toDouble(),
-          y.toDouble(),
-          matrix,
-        );
+  /// Solve the 8-parameter homography mapping [from] -> [to] (4 point pairs).
+  /// Returns a 9-element row-major matrix (h8 == 1), or null if singular.
+  List<double>? _homography(List<Offset> from, List<Offset> to) {
+    final a = <List<double>>[];
+    final b = <double>[];
+    for (var i = 0; i < 4; i++) {
+      final s = from[i];
+      final d = to[i];
+      a.add([s.dx, s.dy, 1, 0, 0, 0, -s.dx * d.dx, -s.dy * d.dx]);
+      b.add(d.dx);
+      a.add([0, 0, 0, s.dx, s.dy, 1, -s.dx * d.dy, -s.dy * d.dy]);
+      b.add(d.dy);
+    }
+    final x = _solve(a, b);
+    if (x == null) return null;
+    return [x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7], 1.0];
+  }
 
-        final srcX = sourcePoint.dx.clamp(0.0, image.width - 1.0).round();
-        final srcY = sourcePoint.dy.clamp(0.0, image.height - 1.0).round();
-
-        final pixel = image.getPixel(srcX, srcY);
-        result.setPixel(x, y, pixel);
+  /// Gaussian elimination with partial pivoting. Returns null if singular.
+  List<double>? _solve(List<List<double>> a, List<double> b) {
+    final n = a.length;
+    final m = [
+      for (var i = 0; i < n; i++) [...a[i], b[i]],
+    ];
+    for (var i = 0; i < n; i++) {
+      var pivot = i;
+      for (var k = i + 1; k < n; k++) {
+        if (m[k][i].abs() > m[pivot][i].abs()) pivot = k;
+      }
+      if (m[pivot][i].abs() < 1e-9) return null; // singular
+      if (pivot != i) {
+        final tmp = m[i];
+        m[i] = m[pivot];
+        m[pivot] = tmp;
+      }
+      for (var k = i + 1; k < n; k++) {
+        final factor = m[k][i] / m[i][i];
+        for (var j = i; j <= n; j++) {
+          m[k][j] -= factor * m[i][j];
+        }
       }
     }
-
-    return result;
-  }
-
-  /// Calculate output size for perspective transform
-  Size _calculateOutputSize(List<Offset> corners) {
-    if (corners.length != 4) {
-      return const Size(400, 300);
+    final x = List<double>.filled(n, 0);
+    for (var i = n - 1; i >= 0; i--) {
+      var sum = m[i][n];
+      for (var j = i + 1; j < n; j++) {
+        sum -= m[i][j] * x[j];
+      }
+      x[i] = sum / m[i][i];
     }
-
-    // Calculate distances between corners
-    final topWidth = (corners[1] - corners[0]).distance;
-    final bottomWidth = (corners[2] - corners[3]).distance;
-    final leftHeight = (corners[3] - corners[0]).distance;
-    final rightHeight = (corners[2] - corners[1]).distance;
-
-    final width = (topWidth + bottomWidth) / 2.0;
-    final height = (leftHeight + rightHeight) / 2.0;
-
-    return Size(width, height);
+    return x;
   }
 
-  /// Calculate perspective transform matrix
-  List<double> _calculatePerspectiveMatrix(
-    List<Offset> corners,
-    int width,
-    int height,
-  ) {
-    // Simplified perspective transform calculation
-    // In a full implementation, this would calculate the proper 3x3 homography matrix
-    final src = [
-      corners[0].dx,
-      corners[0].dy,
-      corners[1].dx,
-      corners[1].dy,
-      corners[2].dx,
-      corners[2].dy,
-      corners[3].dx,
-      corners[3].dy,
-    ];
+  // ---------------------------------------------------------------------------
+  // Fallback
+  // ---------------------------------------------------------------------------
 
-    final dst = [
-      0.0,
-      0.0,
-      width.toDouble(),
-      0.0,
-      width.toDouble(),
-      height.toDouble(),
-      0.0,
-      height.toDouble(),
-    ];
-
-    // For simplicity, using affine approximation
-    // In production, you'd want a full perspective transform
-    return [
-      (dst[2] - dst[0]) / (src[2] - src[0]),
-      0,
-      dst[0] - src[0] * (dst[2] - dst[0]) / (src[2] - src[0]),
-      0,
-      (dst[7] - dst[1]) / (src[7] - src[1]),
-      dst[1] - src[1] * (dst[7] - dst[1]) / (src[7] - src[1]),
-      0,
-      0,
-      1,
-    ];
-  }
-
-  /// Apply inverse perspective transform
-  Offset _inverseTransform(double x, double y, List<double> matrix) {
-    // Simplified inverse transform for affine approximation
-    final srcX = (x - matrix[2]) / matrix[0];
-    final srcY = (y - matrix[5]) / matrix[4];
-    return Offset(srcX, srcY);
-  }
-
-  /// Create bounding box fallback
-  AutoCropResult _createBoundingBoxFallback(
-    img.Image image,
+  AutoCropResult _fallback(
+    img.Image original,
+    Uint8List originalData,
     Stopwatch stopwatch,
     Map<String, dynamic> metadata,
     String reason,
+    double confidence,
   ) {
-    final croppedImage = _cropToBoundingBox(image);
-    final corners = [
-      const Offset(0, 0),
-      Offset(image.width - 1.0, 0),
-      Offset(image.width - 1.0, image.height - 1.0),
-      Offset(0, image.height - 1.0),
-    ];
-
-    final duration = stopwatch.elapsedMilliseconds;
-    metadata['detectionTimeMs'] = duration;
-    metadata['detectionMethod'] = 'bounding_box';
+    stopwatch.stop();
+    metadata['detectionTimeMs'] = stopwatch.elapsedMilliseconds;
+    metadata['detectionMethod'] = 'fallback';
     metadata['fallbackReason'] = reason;
 
+    final w = original.width.toDouble();
+    final h = original.height.toDouble();
     return AutoCropResult(
-      croppedImageData: Uint8List.fromList(
-        img.encodeJpg(croppedImage, quality: 95),
-      ),
-      corners: corners,
-      durationMs: duration,
-      confidence: 0.1,
+      // Return the ORIGINAL bytes unchanged (no silent re-encode loss).
+      croppedImageData: originalData,
+      corners: [const Offset(0, 0), Offset(w, 0), Offset(w, h), Offset(0, h)],
+      durationMs: stopwatch.elapsedMilliseconds,
+      confidence: confidence,
       fallbackUsed: true,
       metadata: metadata,
     );
   }
-
-  /// Crop to bounding box (simple rectangular crop)
-  img.Image _cropToBoundingBox(img.Image image) {
-    // For now, return the original image
-    // In a more sophisticated implementation, you could detect content bounds
-    return image;
-  }
 }
 
-/// Helper class for processing image with scale information
-class _ProcessingImage {
-  final img.Image image;
-  final double scale;
-
-  _ProcessingImage(this.image, this.scale);
-}
-
-/// Helper class for detection result
-class _DetectionResult {
+/// Internal detection result.
+class _Detection {
   final List<Offset> corners;
   final double confidence;
-  final double contourArea;
-
-  _DetectionResult(this.corners, this.confidence, this.contourArea);
-}
-
-/// Simple point class for contour detection
-class Point {
-  final int x;
-  final int y;
-
-  Point(this.x, this.y);
+  final double blobRatio;
+  const _Detection(this.corners, this.confidence, this.blobRatio);
 }

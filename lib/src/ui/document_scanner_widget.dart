@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 
@@ -20,8 +21,12 @@ class DocumentScannerWidget extends StatefulWidget {
   final Widget? customHeader;
   final Widget? customFooter;
 
+  /// Optional scanner service (e.g. one configured with a custom storage
+  /// directory). Defaults to [DocumentScannerService.instance].
+  final DocumentScannerService? service;
+
   const DocumentScannerWidget({
-    Key? key,
+    super.key,
     required this.documentType,
     required this.onScanComplete,
     this.processingOptions,
@@ -31,14 +36,16 @@ class DocumentScannerWidget extends StatefulWidget {
     this.showImportOption = true,
     this.customHeader,
     this.customFooter,
-  }) : super(key: key);
+    this.service,
+  });
 
   @override
   State<DocumentScannerWidget> createState() => _DocumentScannerWidgetState();
 }
 
 class _DocumentScannerWidgetState extends State<DocumentScannerWidget> {
-  final DocumentScannerService _scannerService = DocumentScannerService();
+  late final DocumentScannerService _scannerService =
+      widget.service ?? DocumentScannerService.instance;
 
   bool _isScanning = false;
   String? _currentError;
@@ -313,26 +320,27 @@ class _DocumentScannerWidgetState extends State<DocumentScannerWidget> {
 
       if (guideResult == null) {
         // User cancelled
-        setState(() => _isScanning = false);
+        if (mounted) setState(() => _isScanning = false);
         return;
       }
 
-      // Decode image to get pixel dimensions for corner mapping
-      final decoded = img.decodeImage(guideResult.imageData);
-      if (decoded == null) {
+      // Decode image dimensions off the UI thread for corner mapping.
+      final size = await compute(_decodeImageSize, guideResult.imageData);
+      if (size.length < 2) {
         _handleError('Failed to decode captured image');
         return;
       }
 
-      final imgW = decoded.width.toDouble();
-      final imgH = decoded.height.toDouble();
+      final imgW = size[0].toDouble();
+      final imgH = size[1].toDouble();
 
       // Convert fractional guide corners to pixel coordinates
       final pixelCorners = guideResult.corners
           .map((f) => Offset(f.dx * imgW, f.dy * imgH))
           .toList();
 
-      // Apply perspective warp using the guide corners
+      // Apply perspective warp using the guide corners. Use the quad's own
+      // aspect ratio (auto); the user can still pick a paper format in the editor.
       final imageProcessor = ImageProcessor();
       Uint8List? warpedData;
       try {
@@ -340,7 +348,7 @@ class _DocumentScannerWidgetState extends State<DocumentScannerWidget> {
           guideResult.imageData,
           ImageEditingOptions(
             cropCorners: pixelCorners,
-            documentFormat: DocumentFormat.isoA,
+            documentFormat: DocumentFormat.auto,
           ),
         );
       } catch (_) {
@@ -370,7 +378,7 @@ class _DocumentScannerWidgetState extends State<DocumentScannerWidget> {
     } catch (e) {
       _handleError('Failed to scan document: $e');
     } finally {
-      setState(() => _isScanning = false);
+      if (mounted) setState(() => _isScanning = false);
     }
   }
 
@@ -397,7 +405,7 @@ class _DocumentScannerWidgetState extends State<DocumentScannerWidget> {
     } catch (e) {
       _handleError('Failed to import document: $e');
     } finally {
-      setState(() => _isScanning = false);
+      if (mounted) setState(() => _isScanning = false);
     }
   }
 
@@ -406,6 +414,7 @@ class _DocumentScannerWidgetState extends State<DocumentScannerWidget> {
 
   /// Show image editor automatically after scan/import
   Future<void> _showImageEditor(ScannedDocument document) async {
+    if (!mounted) return;
     // Use the shared helper method from DocumentScannerService
     final result = await _scannerService.showImageEditorFlow(
       context: context,
@@ -415,12 +424,12 @@ class _DocumentScannerWidgetState extends State<DocumentScannerWidget> {
     );
 
     // Call the completion callback with the final result
-    widget.onScanComplete(result);
+    if (mounted) widget.onScanComplete(result);
   }
 
   /// Handle error
   void _handleError(String error) {
-    setState(() => _currentError = error);
+    if (mounted) setState(() => _currentError = error);
     widget.onError?.call(error);
   }
 
@@ -498,3 +507,11 @@ class _DocumentScannerWidgetState extends State<DocumentScannerWidget> {
 // QR Scanner Screen removed - now implemented in qr_scanner_service.dart
 
 // with support for camera, gallery, and QR code scanning modes
+
+/// Top-level entry for `compute`: decode just the pixel dimensions of an
+/// encoded image. Returns `[width, height]`, or empty on failure.
+List<int> _decodeImageSize(Uint8List data) {
+  final image = img.decodeImage(data);
+  if (image == null) return const [];
+  return [image.width, image.height];
+}

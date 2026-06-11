@@ -6,16 +6,17 @@
 import 'dart:async' as _i5;
 import 'dart:io' as _i3;
 import 'dart:typed_data' as _i9;
-import 'dart:ui' as _i14;
+import 'dart:ui' as _i15;
 
 import 'package:document_scanner/src/models/scan_result.dart' as _i4;
 import 'package:document_scanner/src/models/scanned_document.dart' as _i7;
 import 'package:document_scanner/src/services/camera_service.dart' as _i2;
-import 'package:document_scanner/src/services/image_processor.dart' as _i13;
+import 'package:document_scanner/src/services/image_processor.dart' as _i14;
 import 'package:document_scanner/src/services/pdf_generator.dart' as _i10;
 import 'package:document_scanner/src/services/qr_scanner_service.dart' as _i11;
 import 'package:document_scanner/src/services/storage_helper.dart' as _i6;
 import 'package:flutter/material.dart' as _i12;
+import 'package:http/http.dart' as _i13;
 import 'package:mockito/mockito.dart' as _i1;
 import 'package:mockito/src/dummies.dart' as _i8;
 
@@ -376,25 +377,52 @@ class MockQRScannerService extends _i1.Mock implements _i11.QRScannerService {
           as _i4.QRScanResult);
 
   @override
-  _i5.Future<_i7.ScannedDocument?> downloadManualFromUrl(String? url) =>
+  _i5.Future<_i7.ScannedDocument?> downloadManualFromUrl(
+    String? url, {
+    bool? allowInsecureHttp = false,
+    int? maxBytes,
+    _i13.Client? client,
+  }) =>
       (super.noSuchMethod(
-            Invocation.method(#downloadManualFromUrl, [url]),
+            Invocation.method(
+              #downloadManualFromUrl,
+              [url],
+              {
+                #allowInsecureHttp: allowInsecureHttp,
+                #maxBytes: maxBytes,
+                #client: client,
+              },
+            ),
             returnValue: _i5.Future<_i7.ScannedDocument?>.value(),
           )
           as _i5.Future<_i7.ScannedDocument?>);
 
   @override
-  _i5.Future<bool> validateManualUrl(String? url) =>
+  _i5.Future<bool> validateManualUrl(
+    String? url, {
+    bool? allowInsecureHttp = false,
+  }) =>
       (super.noSuchMethod(
-            Invocation.method(#validateManualUrl, [url]),
+            Invocation.method(
+              #validateManualUrl,
+              [url],
+              {#allowInsecureHttp: allowInsecureHttp},
+            ),
             returnValue: _i5.Future<bool>.value(false),
           )
           as _i5.Future<bool>);
 
   @override
-  _i5.Future<Map<String, dynamic>> getManualMetadata(String? url) =>
+  _i5.Future<Map<String, dynamic>> getManualMetadata(
+    String? url, {
+    bool? allowInsecureHttp = false,
+  }) =>
       (super.noSuchMethod(
-            Invocation.method(#getManualMetadata, [url]),
+            Invocation.method(
+              #getManualMetadata,
+              [url],
+              {#allowInsecureHttp: allowInsecureHttp},
+            ),
             returnValue: _i5.Future<Map<String, dynamic>>.value(
               <String, dynamic>{},
             ),
@@ -411,7 +439,7 @@ class MockQRScannerService extends _i1.Mock implements _i11.QRScannerService {
 /// A class which mocks [ImageProcessor].
 ///
 /// See the documentation for Mockito's code generation for more information.
-class MockImageProcessor extends _i1.Mock implements _i13.ImageProcessor {
+class MockImageProcessor extends _i1.Mock implements _i14.ImageProcessor {
   MockImageProcessor() {
     _i1.throwOnMissingStub(this);
   }
@@ -452,12 +480,12 @@ class MockImageProcessor extends _i1.Mock implements _i13.ImageProcessor {
           as _i5.Future<_i9.Uint8List>);
 
   @override
-  _i5.Future<List<_i14.Offset>> detectDocumentEdges(_i9.Uint8List? imageData) =>
+  _i5.Future<List<_i15.Offset>> detectDocumentEdges(_i9.Uint8List? imageData) =>
       (super.noSuchMethod(
             Invocation.method(#detectDocumentEdges, [imageData]),
-            returnValue: _i5.Future<List<_i14.Offset>>.value(<_i14.Offset>[]),
+            returnValue: _i5.Future<List<_i15.Offset>>.value(<_i15.Offset>[]),
           )
-          as _i5.Future<List<_i14.Offset>>);
+          as _i5.Future<List<_i15.Offset>>);
 
   @override
   Map<String, dynamic> analyzeImageQuality(_i9.Uint8List? imageData) =>

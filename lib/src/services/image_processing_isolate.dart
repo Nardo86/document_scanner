@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'dart:math' as math;
-import 'package:flutter/material.dart';
+import 'dart:ui' show Offset;
+import 'package:flutter/foundation.dart' show compute;
 import 'package:image/image.dart' as img;
 import '../models/scanned_document.dart';
 import 'auto_cropper.dart';
@@ -111,9 +112,9 @@ const double _adaptiveThresholdFraction = 0.5;
 
 /// Service for processing images with auto-crop, colour filters, and resizing.
 ///
-/// Uses synchronous processing in the current isolate. The DTO-based API
-/// ([ImageProcessingJob] / [ImageProcessingResult]) is retained so that
-/// callers can migrate to a `compute`-based approach without API changes.
+/// Heavy work (decode / detect / warp / encode) runs in a background isolate
+/// via `compute`, using the DTO round-trip ([ImageProcessingJob.toMap] /
+/// [ImageProcessingResult.fromMap]) to ferry data across the isolate boundary.
 class ImageProcessingIsolateService {
   static final ImageProcessingIsolateService _instance =
       ImageProcessingIsolateService._internal();
@@ -122,12 +123,13 @@ class ImageProcessingIsolateService {
 
   final AutoCropper _autoCropper = AutoCropper();
 
-  /// Process an image according to the supplied [job].
+  /// Process an image according to the supplied [job], off the UI thread.
   Future<ImageProcessingResult> processImageInBackground(
     ImageProcessingJob job,
   ) async {
     try {
-      return await _processImage(job);
+      final map = await compute(_runImageJobInIsolate, job.toMap());
+      return ImageProcessingResult.fromMap(map);
     } catch (e) {
       return ImageProcessingResult(
         error: 'Processing failed: $e',
@@ -447,4 +449,16 @@ class ImageProcessingIsolateService {
   void dispose() {
     // Reserved for future isolate cleanup.
   }
+}
+
+/// Top-level entry point for `compute`: run an image-processing job in a
+/// background isolate. Receives [ImageProcessingJob.toMap] and returns
+/// [ImageProcessingResult.toMap].
+Future<Map<String, dynamic>> _runImageJobInIsolate(
+  Map<String, dynamic> jobMap,
+) async {
+  final job = ImageProcessingJob.fromMap(jobMap);
+  // Singleton is isolate-local; safe to construct here.
+  final result = await ImageProcessingIsolateService()._processImage(job);
+  return result.toMap();
 }

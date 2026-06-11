@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:typed_data';
 import 'dart:math' as math;
 import 'package:image/image.dart' as img;
@@ -92,37 +91,30 @@ class CameraService {
     return status.isGranted;
   }
 
-  /// Check if storage permission is granted
-  Future<bool> hasStoragePermission() async {
-    if (Platform.isAndroid) {
-      final status = await Permission.manageExternalStorage.status;
-      return status.isGranted;
-    }
-    return true; // iOS doesn't need explicit storage permission
-  }
+  /// Whether a storage permission is required/granted.
+  ///
+  /// The library writes to scoped, app-specific storage and imports via
+  /// `image_picker`, neither of which needs a runtime storage permission on
+  /// modern Android or iOS. Always true; kept for API compatibility.
+  Future<bool> hasStoragePermission() async => true;
 
-  /// Request camera permission
+  /// Request camera permission.
+  ///
+  /// Returns false (without prompting) when permanently denied so callers can
+  /// direct the user to app settings via [openAppSettings].
   Future<bool> requestCameraPermission() async {
     final status = await Permission.camera.status;
-    if (status.isDenied) {
-      final result = await Permission.camera.request();
-      return result.isGranted;
-    }
-    return status.isGranted;
+    if (status.isGranted) return true;
+    if (status.isPermanentlyDenied || status.isRestricted) return false;
+    final result = await Permission.camera.request();
+    return result.isGranted;
   }
 
-  /// Request storage permission
-  Future<bool> requestStoragePermission() async {
-    if (Platform.isAndroid) {
-      final status = await Permission.manageExternalStorage.status;
-      if (status.isDenied) {
-        final result = await Permission.manageExternalStorage.request();
-        return result.isGranted;
-      }
-      return status.isGranted;
-    }
-    return true; // iOS doesn't need explicit storage permission
-  }
+  /// Request storage permission.
+  ///
+  /// No-op (returns true): scoped storage needs no runtime permission. Kept so
+  /// existing call sites continue to compile.
+  Future<bool> requestStoragePermission() async => true;
 
   /// Capture image from camera
   /// Returns CaptureResult with image data and path

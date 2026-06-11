@@ -4,27 +4,42 @@ import 'package:flutter/material.dart';
 import '../models/scanned_document.dart';
 import '../services/image_processor.dart';
 
-/// Widget for editing scanned images with rotation, color filters, and cropping
+/// Widget for editing scanned images: rotation, colour filters, and cropping.
+///
+/// State model is **declarative**: the editor tracks the current rotation,
+/// crop quad, colour filter and document format, and re-renders the preview by
+/// applying that pipeline to the *original* image every time. This avoids the
+/// cumulative JPEG re-encoding / stale-state bugs of an incremental approach
+/// and makes rotation/crop interaction (issues #30/#31/#32) coherent:
+///
+/// - Rotation re-derives the full (uncropped) base image and clears the crop,
+///   re-detecting edges in the new orientation — the crop tool stays available.
+/// - Reset-crop simply drops the crop quad (no double-rotation).
+/// - Changing the document format only re-renders; it never auto-commits a crop.
 class ImageEditingWidget extends StatefulWidget {
   final Uint8List imageData;
-  final Function(
+  final void Function(
     Uint8List editedImageData,
     PdfResolution selectedResolution,
     DocumentFormat selectedFormat,
   )
   onImageEdited;
   final VoidCallback? onCancel;
+
+  /// Optional already-processed preview shown before the first render.
   final Uint8List? initialPreviewData;
+
+  /// Optional initial crop corners (in [imageData] pixel coordinates).
   final List<Offset>? initialCropCorners;
 
   const ImageEditingWidget({
-    Key? key,
+    super.key,
     required this.imageData,
     required this.onImageEdited,
     this.onCancel,
     this.initialPreviewData,
     this.initialCropCorners,
-  }) : super(key: key);
+  });
 
   @override
   State<ImageEditingWidget> createState() => _ImageEditingWidgetState();
@@ -33,331 +48,113 @@ class ImageEditingWidget extends StatefulWidget {
 class _ImageEditingWidgetState extends State<ImageEditingWidget> {
   final ImageProcessor _imageProcessor = ImageProcessor();
 
-  ImageEditingOptions _editingOptions = const ImageEditingOptions();
+  /// Original captured image — never mutated.
+  late final Uint8List _rawImage;
+
+  /// Raw image rotated by [_rotation] (the canvas the user crops on).
+  Uint8List? _baseImage;
+
+  /// Rendered result: rotation → crop → filter applied to [_rawImage].
   Uint8List? _previewImageData;
-  Uint8List?
-  _baseImageData; // Image after rotation/crop but before color filters
-  Uint8List?
-  _preCropBaseData; // Image before the last crop (for re-editing crop)
+
+  /// Corners shown/edited in the crop overlay, in [_baseImage] coordinates.
   List<Offset>? _detectedCorners;
+
+  /// Committed crop quad (null = no crop), in [_baseImage] coordinates.
+  List<Offset>? _cropCorners;
+
+  DocumentColorFilter _filter = DocumentColorFilter.none;
+  DocumentFormat _format = DocumentFormat.auto;
+  int _rotation = 0; // 0, 90, 180, 270 (clockwise)
+
+  PdfResolution _selectedResolution = PdfResolution.size;
+
   bool _isProcessing = false;
   bool _showCropOverlay = false;
-  int _totalRotationDegrees = 0; // Accumulated rotation since last reset
-  bool _hasRotatedAfterCrop = false; // True when crop corners are invalid
-  PdfResolution _selectedResolution =
-      PdfResolution.size; // Default to Standard (150 DPI)
-  bool _isSettingsExpanded = false; // Track if settings panel is expanded
+  bool _isSettingsExpanded = false;
 
   @override
   void initState() {
     super.initState();
-
-    // Use initial preview data if provided, otherwise use original image
+    _rawImage = widget.imageData;
     _previewImageData = widget.initialPreviewData ?? widget.imageData;
-    _baseImageData = widget.initialPreviewData ?? widget.imageData;
+    _baseImage = widget.imageData;
 
-    // When an auto-cropped preview is provided, preserve the raw original
-    // so that rotation and reset crop can go back to the full image.
-    if (widget.initialPreviewData != null) {
-      _preCropBaseData = widget.imageData;
-    }
-
-    // Use initial crop corners if provided, otherwise detect edges
     if (widget.initialCropCorners != null &&
-        widget.initialCropCorners!.isNotEmpty) {
+        widget.initialCropCorners!.length == 4) {
+      _cropCorners = widget.initialCropCorners;
       _detectedCorners = widget.initialCropCorners;
     } else {
-      _detectDocumentEdges();
+      _detectEdges(_rawImage);
     }
   }
 
-  Future<void> _detectDocumentEdges() async {
+  @override
+  void dispose() {
+    _imageProcessor.dispose();
+    super.dispose();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Rendering pipeline (always derived from the raw image)
+  // ---------------------------------------------------------------------------
+
+  ImageEditingOptions get _currentOptions => ImageEditingOptions(
+    rotationDegrees: _rotation,
+    colorFilter: _filter,
+    cropCorners: _cropCorners,
+    documentFormat: _format,
+  );
+
+  /// Re-render the preview from the raw image applying the full pipeline.
+  Future<void> _renderPreview() async {
+    setState(() => _isProcessing = true);
     try {
-      final corners = await _imageProcessor.detectDocumentEdges(
-        widget.imageData,
+      final preview = await _imageProcessor.applyImageEditing(
+        _rawImage,
+        _currentOptions,
       );
       if (!mounted) return;
-      if (corners.isNotEmpty) {
-        setState(() {
-          _detectedCorners = corners;
-        });
-        return;
-      }
-    } catch (_) {
+      setState(() {
+        _previewImageData = preview;
+        _isProcessing = false;
+      });
+    } catch (e) {
       if (!mounted) return;
-      // Fall through to proportional fallback
+      setState(() => _isProcessing = false);
+      _showSnack('Error updating preview: $e');
     }
-
-    // Fallback: use proportional corners (5% inset from edges)
-    await _setProportionalFallbackCorners();
   }
 
-  Future<void> _setProportionalFallbackCorners() async {
+  /// Re-derive the (uncropped) base image for the current rotation.
+  Future<void> _renderBase() async {
+    final base = await _imageProcessor.applyImageEditing(
+      _rawImage,
+      ImageEditingOptions(rotationDegrees: _rotation),
+    );
     if (!mounted) return;
-    try {
-      final codec = await ui.instantiateImageCodec(widget.imageData);
-      final frame = await codec.getNextFrame();
-      final w = frame.image.width.toDouble();
-      final h = frame.image.height.toDouble();
-      frame.image.dispose();
-
-      if (!mounted) return;
-      final inset = 0.05; // 5% inset from edges
-      setState(() {
-        _detectedCorners = [
-          Offset(w * inset, h * inset),
-          Offset(w * (1 - inset), h * inset),
-          Offset(w * (1 - inset), h * (1 - inset)),
-          Offset(w * inset, h * (1 - inset)),
-        ];
-      });
-    } catch (_) {
-      if (!mounted) return;
-      // Last resort: use small absolute corners
-      setState(() {
-        _detectedCorners = [
-          const Offset(50, 50),
-          const Offset(300, 50),
-          const Offset(300, 400),
-          const Offset(50, 400),
-        ];
-      });
-    }
+    setState(() => _baseImage = base);
   }
 
-  Future<void> _updatePreview() async {
-    // Apply only color filter to base image (after rotation/crop)
-    if (_baseImageData == null) return;
+  // ---------------------------------------------------------------------------
+  // Edge detection
+  // ---------------------------------------------------------------------------
 
-    setState(() {
-      _isProcessing = true;
-    });
-
-    try {
-      // Apply only color filter to base image
-      final filterOptions = ImageEditingOptions(
-        colorFilter: _editingOptions.colorFilter,
-      );
-      final processedData = await _imageProcessor.applyImageEditing(
-        _baseImageData!,
-        filterOptions,
-      );
-
-      setState(() {
-        _previewImageData = processedData;
-        _isProcessing = false;
-      });
-    } catch (e) {
-      setState(() {
-        _isProcessing = false;
-      });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error updating preview: $e')));
-    }
-  }
-
-  void _rotateClockwise() {
-    _applyStepRotation(90);
-  }
-
-  void _rotateCounterclockwise() {
-    _applyStepRotation(-90);
-  }
-
-  /// Rotate the current base image by [degrees] (±90).
-  ///
-  /// Rotates whatever is currently displayed (including a cropped image).
-  /// Tracks cumulative rotation so that "Reset Crop" can later apply the
-  /// same rotation to the original full image.  After a crop, rotation
-  /// invalidates the crop corners so the crop tool is disabled until a
-  /// reset is performed.
-  Future<void> _applyStepRotation(int degrees) async {
-    if (_baseImageData == null) return;
-
-    setState(() {
-      _isProcessing = true;
-    });
-
-    try {
-      final rotationOptions = ImageEditingOptions(rotationDegrees: degrees);
-      final rotatedData = await _imageProcessor.applyImageEditing(
-        _baseImageData!,
-        rotationOptions,
-      );
-
-      // Re-apply the current color filter if one was selected
-      Uint8List previewData = rotatedData;
-      if (_editingOptions.colorFilter != ColorFilter.none) {
-        final filterOptions = ImageEditingOptions(
-          colorFilter: _editingOptions.colorFilter,
-        );
-        previewData = await _imageProcessor.applyImageEditing(
-          rotatedData,
-          filterOptions,
-        );
-      }
-
-      _totalRotationDegrees = (_totalRotationDegrees + degrees) % 360;
-
-      setState(() {
-        _baseImageData = rotatedData;
-        _previewImageData = previewData;
-        // Keep _preCropBaseData for reset crop
-        _detectedCorners = null;
-        _showCropOverlay = false;
-        _editingOptions = _editingOptions.copyWith(cropCorners: null);
-        _isProcessing = false;
-        // After rotating a cropped image, corners are no longer valid
-        if (_preCropBaseData != null) {
-          _hasRotatedAfterCrop = true;
-        }
-      });
-
-      // Re-detect edges only if no crop was applied (corners still valid)
-      if (!_hasRotatedAfterCrop) {
-        _detectDocumentEdgesOnData(rotatedData);
-      }
-    } catch (e) {
-      setState(() {
-        _isProcessing = false;
-      });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error rotating image: $e')));
-    }
-  }
-
-  void _setColorFilter(ColorFilter filter) {
-    // Apply color filter to current preview image
-    _applyIncrementalColorFilter(filter);
-  }
-
-  Future<void> _applyIncrementalColorFilter(ColorFilter filter) async {
-    if (_baseImageData == null) return;
-
-    setState(() {
-      _isProcessing = true;
-    });
-
-    try {
-      // Apply color filter to base image (after rotation/crop but before previous filters)
-      final filterOptions = ImageEditingOptions(colorFilter: filter);
-      final filteredData = await _imageProcessor.applyImageEditing(
-        _baseImageData!,
-        filterOptions,
-      );
-
-      setState(() {
-        _previewImageData = filteredData;
-        _editingOptions = _editingOptions.copyWith(colorFilter: filter);
-        _isProcessing = false;
-      });
-
-      // Show success feedback for filter application
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${_getFilterName(filter)} filter applied'),
-            duration: const Duration(seconds: 1),
-          ),
-        );
-      }
-    } catch (e) {
-      setState(() {
-        _isProcessing = false;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error applying filter: $e')));
-      }
-    }
-  }
-
-  /// Reset crop: restore original image, apply accumulated rotation,
-  /// clear corners, and re-apply active color filter.
-  Future<void> _resetCrop() async {
-    if (_preCropBaseData == null) return;
-
-    setState(() {
-      _isProcessing = true;
-    });
-
-    try {
-      // Start from the original pre-crop image
-      Uint8List restored = _preCropBaseData!;
-
-      // Apply accumulated rotation so the user keeps the orientation
-      if (_totalRotationDegrees != 0) {
-        final rotationOptions = ImageEditingOptions(
-          rotationDegrees: _totalRotationDegrees,
-        );
-        restored = await _imageProcessor.applyImageEditing(
-          restored,
-          rotationOptions,
-        );
-      }
-
-      // Re-apply active color filter
-      Uint8List previewData = restored;
-      if (_editingOptions.colorFilter != ColorFilter.none) {
-        final filterOptions = ImageEditingOptions(
-          colorFilter: _editingOptions.colorFilter,
-        );
-        previewData = await _imageProcessor.applyImageEditing(
-          restored,
-          filterOptions,
-        );
-      }
-
-      setState(() {
-        _baseImageData = restored;
-        _preCropBaseData = null;
-        _detectedCorners = null;
-        _showCropOverlay = false;
-        _hasRotatedAfterCrop = false;
-        _previewImageData = previewData;
-        _editingOptions = _editingOptions.copyWith(cropCorners: null);
-        _isProcessing = false;
-      });
-
-      // Re-detect edges on the restored+rotated image
-      _detectDocumentEdgesOnData(restored);
-    } catch (e) {
-      setState(() {
-        _isProcessing = false;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error resetting crop: $e')));
-      }
-    }
-  }
-
-  /// Detect document edges on arbitrary image data (not just widget.imageData).
-  Future<void> _detectDocumentEdgesOnData(Uint8List imageData) async {
+  Future<void> _detectEdges(Uint8List imageData) async {
     try {
       final corners = await _imageProcessor.detectDocumentEdges(imageData);
       if (!mounted) return;
-      if (corners.isNotEmpty) {
-        setState(() {
-          _detectedCorners = corners;
-        });
+      if (corners.length == 4) {
+        setState(() => _detectedCorners = corners);
         return;
       }
     } catch (_) {
       if (!mounted) return;
     }
-    // Fallback: proportional corners based on the given image
-    await _setProportionalFallbackCornersFromData(imageData);
+    await _setProportionalFallbackCorners(imageData);
   }
 
-  /// Set proportional fallback corners from arbitrary image data.
-  Future<void> _setProportionalFallbackCornersFromData(
-    Uint8List imageData,
-  ) async {
+  Future<void> _setProportionalFallbackCorners(Uint8List imageData) async {
     if (!mounted) return;
     try {
       final codec = await ui.instantiateImageCodec(imageData);
@@ -365,9 +162,8 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
       final w = frame.image.width.toDouble();
       final h = frame.image.height.toDouble();
       frame.image.dispose();
-
       if (!mounted) return;
-      final inset = 0.05;
+      const inset = 0.05;
       setState(() {
         _detectedCorners = [
           Offset(w * inset, h * inset),
@@ -379,491 +175,482 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _detectedCorners = [
-          const Offset(50, 50),
-          const Offset(300, 50),
-          const Offset(300, 400),
-          const Offset(50, 400),
+        _detectedCorners = const [
+          Offset(50, 50),
+          Offset(300, 50),
+          Offset(300, 400),
+          Offset(50, 400),
         ];
       });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Actions
+  // ---------------------------------------------------------------------------
+
+  void _rotateClockwise() => _applyRotation(90);
+  void _rotateCounterclockwise() => _applyRotation(-90);
+
+  /// Rotate by [degrees] (±90).
+  ///
+  /// Per issue #32, rotation discards any crop and re-detects edges on the
+  /// freshly-rotated full image, keeping the crop tool available.
+  Future<void> _applyRotation(int degrees) async {
+    setState(() {
+      _rotation = (_rotation + degrees) % 360;
+      if (_rotation < 0) _rotation += 360;
+      _cropCorners = null;
+      _detectedCorners = null;
+      _showCropOverlay = false;
+    });
+    await _renderBase();
+    if (!mounted) return;
+    await _renderPreview();
+    if (!mounted || _baseImage == null) return;
+    await _detectEdges(_baseImage!);
+  }
+
+  void _setColorFilter(DocumentColorFilter filter) {
+    if (_filter == filter) return;
+    setState(() => _filter = filter);
+    _renderPreview();
+    if (mounted && filter != DocumentColorFilter.none) {
+      _showSnack('${_getFilterName(filter)} filter applied', isError: false);
     }
   }
 
   void _toggleCropMode() {
     setState(() {
       _showCropOverlay = !_showCropOverlay;
-      if (_showCropOverlay && _detectedCorners != null) {
-        // Don't update preview when entering crop mode, just show overlay
-        _editingOptions = _editingOptions.copyWith(
-          cropCorners: _detectedCorners,
-        );
-      } else {
-        // When exiting crop mode, apply the crop or reset
-        _editingOptions = _editingOptions.copyWith(cropCorners: null);
-        _updatePreview();
+      if (_showCropOverlay) {
+        _detectedCorners = _cropCorners ?? _detectedCorners;
       }
     });
+    if (!_showCropOverlay) {
+      _renderPreview();
+    }
   }
 
   Future<void> _applyCrop() async {
-    if (_detectedCorners == null) return;
-
+    if (_detectedCorners == null || _detectedCorners!.length != 4) return;
     setState(() {
-      _isProcessing = true;
+      _cropCorners = _detectedCorners;
+      _showCropOverlay = false;
     });
+    await _renderPreview();
+  }
 
-    try {
-      // Crop from the pre-crop image (if re-editing) or current base
-      final sourceData = _preCropBaseData ?? _baseImageData!;
-
-      final cropOptions = ImageEditingOptions(
-        cropCorners: _detectedCorners,
-        documentFormat: _editingOptions.documentFormat,
-      );
-      final croppedData = await _imageProcessor.applyImageEditing(
-        sourceData,
-        cropOptions,
-      );
-
-      // Re-apply the current color filter if one was selected
-      Uint8List previewData = croppedData;
-      if (_editingOptions.colorFilter != ColorFilter.none) {
-        final filterOptions = ImageEditingOptions(
-          colorFilter: _editingOptions.colorFilter,
-        );
-        previewData = await _imageProcessor.applyImageEditing(
-          croppedData,
-          filterOptions,
-        );
-      }
-
-      setState(() {
-        // Save pre-crop state for re-editing (only first time)
-        _preCropBaseData ??= _baseImageData;
-        _previewImageData = previewData;
-        _baseImageData = croppedData;
-        _showCropOverlay = false;
-        _hasRotatedAfterCrop = false;
-        _editingOptions = _editingOptions.copyWith(
-          cropCorners: _detectedCorners,
-        );
-        _isProcessing = false;
-      });
-      // Keep _detectedCorners as-is so user can re-edit them
-    } catch (e) {
-      setState(() {
-        _isProcessing = false;
-      });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error applying crop: $e')));
+  /// Issue #31: drop the crop and return to the full (rotated) image.
+  Future<void> _resetCrop() async {
+    setState(() {
+      _cropCorners = null;
+      _showCropOverlay = false;
+    });
+    await _renderPreview();
+    if (mounted && _baseImage != null) {
+      await _detectEdges(_baseImage!);
     }
   }
 
-  void _resetEditing() {
+  Future<void> _resetEditing() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reset all edits?'),
+        content: const Text('This discards rotation, crop and filter changes.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Reset'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
     setState(() {
-      _editingOptions = const ImageEditingOptions();
-      _previewImageData = widget.initialPreviewData ?? widget.imageData;
-      _baseImageData = widget.initialPreviewData ?? widget.imageData;
-      _preCropBaseData = widget.initialPreviewData != null
-          ? widget.imageData
-          : null;
+      _rotation = 0;
+      _filter = DocumentColorFilter.none;
+      _format = DocumentFormat.auto;
+      _cropCorners = null;
       _detectedCorners = null;
       _showCropOverlay = false;
-      _totalRotationDegrees = 0;
-      _hasRotatedAfterCrop = false;
+      _baseImage = _rawImage;
+      _previewImageData = _rawImage;
     });
-
-    // Re-detect edges on the reset image
-    _detectDocumentEdges();
-  }
-
-  void _confirmEditing() {
-    if (_previewImageData != null) {
-      widget.onImageEdited(
-        _previewImageData!,
-        _selectedResolution,
-        _editingOptions.documentFormat,
-      );
-    }
+    await _detectEdges(_rawImage);
   }
 
   void _setResolution(PdfResolution resolution) {
-    setState(() {
-      _selectedResolution = resolution;
-    });
+    setState(() => _selectedResolution = resolution);
   }
+
+  void _setDocumentFormat(DocumentFormat format) {
+    setState(() => _format = format);
+    // Format only affects the final render; never auto-commit a crop.
+    if (!_showCropOverlay) {
+      _renderPreview();
+    }
+  }
+
+  void _confirmEditing() {
+    final preview = _previewImageData;
+    if (preview != null) {
+      widget.onImageEdited(preview, _selectedResolution, _format);
+    }
+  }
+
+  void _showSnack(String message, {bool isError = true}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: Duration(seconds: isError ? 3 : 1),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Build
+  // ---------------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Edit Image'),
-        backgroundColor: Colors.blue[800],
-        foregroundColor: Colors.white,
+        backgroundColor: scheme.primary,
+        foregroundColor: scheme.onPrimary,
         leading: IconButton(
           icon: const Icon(Icons.close),
+          tooltip: 'Cancel',
           onPressed: widget.onCancel,
         ),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _resetEditing,
+            onPressed: _isProcessing ? null : _resetEditing,
             tooltip: 'Reset',
           ),
           IconButton(
             icon: const Icon(Icons.check),
-            onPressed: _confirmEditing,
+            onPressed: _isProcessing ? null : _confirmEditing,
             tooltip: 'Confirm',
           ),
         ],
       ),
       body: Column(
         children: [
-          // Image preview
           Expanded(
             child: Container(
-              color: Colors.grey[200],
-              child: Center(
-                child: _isProcessing
-                    ? const CircularProgressIndicator()
-                    : _previewImageData != null
-                    ? _showCropOverlay && _detectedCorners != null
-                          ? CropOverlayWidget(
-                              imageData:
-                                  _preCropBaseData ??
-                                  _baseImageData ??
-                                  widget.imageData,
-                              corners: _detectedCorners!,
-                              onCornersChanged: (newCorners) {
-                                setState(() {
-                                  _detectedCorners = newCorners;
-                                  _editingOptions = _editingOptions.copyWith(
-                                    cropCorners: newCorners,
-                                  );
-                                });
-                                // No need to update preview here - just store the corners
-                              },
-                            )
-                          : InteractiveViewer(
-                              child: Image.memory(
-                                _previewImageData!,
-                                fit: BoxFit.contain,
-                              ),
-                            )
-                    : const Icon(Icons.image, size: 64),
-              ),
+              color: scheme.surfaceContainerHighest,
+              child: Center(child: _buildPreviewArea()),
             ),
           ),
-
-          // Controls
-          GestureDetector(
-            onTap: () {
-              // Tapping on the controls area toggles expanded state
-              setState(() {
-                _isSettingsExpanded = !_isSettingsExpanded;
-              });
-            },
-            onVerticalDragEnd: (details) {
-              // Swipe up to expand, swipe down to collapse
-              if (details.primaryVelocity! < -500) {
-                // Swipe up
-                setState(() {
-                  _isSettingsExpanded = true;
-                });
-              } else if (details.primaryVelocity! > 500) {
-                // Swipe down
-                setState(() {
-                  _isSettingsExpanded = false;
-                });
-              }
-            },
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.grey.withValues(alpha: 0.3),
-                    spreadRadius: 1,
-                    blurRadius: 5,
-                    offset: const Offset(0, -2),
-                  ),
-                ],
-              ),
-              child: Column(
-                children: [
-                  // Rotation and crop controls (always visible)
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      IconButton(
-                        onPressed: _rotateCounterclockwise,
-                        icon: const Icon(Icons.rotate_left),
-                        tooltip: 'Rotate Left',
-                      ),
-                      IconButton(
-                        onPressed: _rotateClockwise,
-                        icon: const Icon(Icons.rotate_right),
-                        tooltip: 'Rotate Right',
-                      ),
-                      // Crop tool: disabled after rotating a cropped image
-                      if (!_hasRotatedAfterCrop)
-                        IconButton(
-                          onPressed: _toggleCropMode,
-                          icon: Icon(
-                            _showCropOverlay ? Icons.crop_free : Icons.crop,
-                          ),
-                          tooltip: _showCropOverlay
-                              ? 'Disable Crop'
-                              : 'Enable Crop',
-                        ),
-                      if (_showCropOverlay)
-                        IconButton(
-                          onPressed: _applyCrop,
-                          icon: const Icon(Icons.check),
-                          tooltip: 'Apply Crop',
-                          color: Colors.green,
-                        ),
-                      // Reset crop: visible when a crop has been applied
-                      if (!_showCropOverlay && _preCropBaseData != null)
-                        IconButton(
-                          onPressed: _resetCrop,
-                          icon: const Icon(Icons.restart_alt),
-                          tooltip: 'Reset Crop',
-                          color: Colors.orange,
-                        ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // Compact view: Active settings indicators
-                  if (!_isSettingsExpanded) ...[
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        _buildActiveSettingIndicator(
-                          'Filter',
-                          _getColorFilterIcon(_editingOptions.colorFilter),
-                          _editingOptions.colorFilter != ColorFilter.none,
-                          () => setState(() => _isSettingsExpanded = true),
-                        ),
-                        _buildActiveSettingIndicator(
-                          'Format',
-                          _getDocumentFormatIcon(
-                            _editingOptions.documentFormat,
-                          ),
-                          _editingOptions.documentFormat != DocumentFormat.auto,
-                          () => setState(() => _isSettingsExpanded = true),
-                        ),
-                        _buildActiveSettingIndicator(
-                          'PDF',
-                          _getResolutionIcon(_selectedResolution),
-                          _selectedResolution != PdfResolution.size,
-                          () => setState(() => _isSettingsExpanded = true),
-                        ),
-                        IconButton(
-                          onPressed: () =>
-                              setState(() => _isSettingsExpanded = true),
-                          icon: const Icon(Icons.settings),
-                          tooltip: 'Show All Settings',
-                        ),
-                      ],
-                    ),
-                  ],
-
-                  // Expanded view: All settings
-                  if (_isSettingsExpanded) ...[
-                    // Header with collapse button
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Settings',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        IconButton(
-                          onPressed: () =>
-                              setState(() => _isSettingsExpanded = false),
-                          icon: const Icon(Icons.keyboard_arrow_down),
-                          tooltip: 'Collapse Settings',
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 8),
-
-                    // Color filter controls
-                    const Text(
-                      'Color Filter:',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        _buildFilterButton(
-                          'Original',
-                          ColorFilter.none,
-                          Icons.image,
-                        ),
-                        _buildFilterButton(
-                          'Enhanced',
-                          ColorFilter.highContrast,
-                          Icons.auto_fix_high,
-                        ),
-                        _buildFilterButton(
-                          'B&W',
-                          ColorFilter.blackAndWhite,
-                          Icons.filter_b_and_w,
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // Document format controls
-                    const Text(
-                      'Document Format:',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      alignment: WrapAlignment.spaceEvenly,
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        _buildFormatButton(
-                          'Auto',
-                          DocumentFormat.auto,
-                          Icons.auto_fix_normal,
-                        ),
-                        _buildFormatButton(
-                          'A4',
-                          DocumentFormat.isoA,
-                          Icons.description,
-                        ),
-                        _buildFormatButton(
-                          'Letter',
-                          DocumentFormat.usLetter,
-                          Icons.document_scanner,
-                        ),
-                        _buildFormatButton(
-                          'Legal',
-                          DocumentFormat.usLegal,
-                          Icons.article,
-                        ),
-                        _buildFormatButton(
-                          'Receipt',
-                          DocumentFormat.receipt,
-                          Icons.receipt,
-                        ),
-                        _buildFormatButton(
-                          'Square',
-                          DocumentFormat.square,
-                          Icons.crop_square,
-                        ),
-                        _buildFormatButton(
-                          'Card',
-                          DocumentFormat.businessCard,
-                          Icons.credit_card,
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // PDF Resolution controls
-                    const Text(
-                      'PDF Quality:',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        _buildResolutionButton(
-                          'Standard',
-                          PdfResolution.size,
-                          Icons.compress,
-                        ),
-                        _buildResolutionButton(
-                          'High',
-                          PdfResolution.quality,
-                          Icons.high_quality,
-                        ),
-                        _buildResolutionButton(
-                          'Max',
-                          PdfResolution.original,
-                          Icons.hd,
-                        ),
-                      ],
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
+          _buildControls(context),
         ],
       ),
+    );
+  }
+
+  Widget _buildPreviewArea() {
+    if (_isProcessing) {
+      return const CircularProgressIndicator();
+    }
+    final preview = _previewImageData;
+    if (preview == null) {
+      return const Icon(Icons.image, size: 64);
+    }
+    if (_showCropOverlay && _detectedCorners != null) {
+      return CropOverlayWidget(
+        imageData: _baseImage ?? widget.imageData,
+        corners: _detectedCorners!,
+        onCornersChanged: (newCorners) {
+          setState(() => _detectedCorners = newCorners);
+        },
+      );
+    }
+    return InteractiveViewer(
+      child: Image.memory(
+        preview,
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stack) =>
+            const Icon(Icons.broken_image, size: 64),
+      ),
+    );
+  }
+
+  Widget _buildControls(BuildContext context) {
+    return GestureDetector(
+      onTap: () => setState(() => _isSettingsExpanded = !_isSettingsExpanded),
+      onVerticalDragEnd: (details) {
+        final v = details.primaryVelocity ?? 0;
+        if (v < -500) {
+          setState(() => _isSettingsExpanded = true);
+        } else if (v > 500) {
+          setState(() => _isSettingsExpanded = false);
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.12),
+              spreadRadius: 1,
+              blurRadius: 5,
+              offset: const Offset(0, -2),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildToolRow(),
+            const SizedBox(height: 12),
+            if (_isSettingsExpanded)
+              _buildExpandedSettings(context)
+            else
+              _buildCompactSettings(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildToolRow() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: [
+        IconButton(
+          onPressed: _isProcessing ? null : _rotateCounterclockwise,
+          icon: const Icon(Icons.rotate_left),
+          tooltip: 'Rotate Left',
+        ),
+        IconButton(
+          onPressed: _isProcessing ? null : _rotateClockwise,
+          icon: const Icon(Icons.rotate_right),
+          tooltip: 'Rotate Right',
+        ),
+        IconButton(
+          onPressed: _isProcessing ? null : _toggleCropMode,
+          icon: Icon(_showCropOverlay ? Icons.crop_free : Icons.crop),
+          tooltip: _showCropOverlay ? 'Disable Crop' : 'Enable Crop',
+        ),
+        if (_showCropOverlay)
+          IconButton(
+            onPressed: _isProcessing ? null : _applyCrop,
+            icon: const Icon(Icons.check),
+            tooltip: 'Apply Crop',
+            color: Colors.green,
+          ),
+        if (!_showCropOverlay && _cropCorners != null)
+          IconButton(
+            onPressed: _isProcessing ? null : _resetCrop,
+            icon: const Icon(Icons.restart_alt),
+            tooltip: 'Reset Crop',
+            color: Colors.orange,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildCompactSettings() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: [
+        _buildActiveSettingIndicator(
+          'Filter',
+          _getColorFilterIcon(_filter),
+          _filter != DocumentColorFilter.none,
+        ),
+        _buildActiveSettingIndicator(
+          'Format',
+          _getDocumentFormatIcon(_format),
+          _format != DocumentFormat.auto,
+        ),
+        _buildActiveSettingIndicator(
+          'PDF',
+          _getResolutionIcon(_selectedResolution),
+          _selectedResolution != PdfResolution.size,
+        ),
+        IconButton(
+          onPressed: () => setState(() => _isSettingsExpanded = true),
+          icon: const Icon(Icons.settings),
+          tooltip: 'Show All Settings',
+        ),
+      ],
+    );
+  }
+
+  Widget _buildExpandedSettings(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Settings',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            IconButton(
+              onPressed: () => setState(() => _isSettingsExpanded = false),
+              icon: const Icon(Icons.keyboard_arrow_down),
+              tooltip: 'Collapse Settings',
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Color Filter:',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _buildFilterButton(
+              'Original',
+              DocumentColorFilter.none,
+              Icons.image,
+            ),
+            _buildFilterButton(
+              'Enhanced',
+              DocumentColorFilter.highContrast,
+              Icons.auto_fix_high,
+            ),
+            _buildFilterButton(
+              'B&W',
+              DocumentColorFilter.blackAndWhite,
+              Icons.filter_b_and_w,
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        const Text(
+          'Document Format:',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          alignment: WrapAlignment.spaceEvenly,
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _buildFormatButton(
+              'Auto',
+              DocumentFormat.auto,
+              Icons.auto_fix_normal,
+            ),
+            _buildFormatButton('A4', DocumentFormat.isoA, Icons.description),
+            _buildFormatButton(
+              'Letter',
+              DocumentFormat.usLetter,
+              Icons.document_scanner,
+            ),
+            _buildFormatButton('Legal', DocumentFormat.usLegal, Icons.article),
+            _buildFormatButton(
+              'Receipt',
+              DocumentFormat.receipt,
+              Icons.receipt,
+            ),
+            _buildFormatButton(
+              'Square',
+              DocumentFormat.square,
+              Icons.crop_square,
+            ),
+            _buildFormatButton(
+              'Card',
+              DocumentFormat.businessCard,
+              Icons.credit_card,
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        const Text(
+          'PDF Quality:',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _buildResolutionButton(
+              'Standard',
+              PdfResolution.size,
+              Icons.compress,
+            ),
+            _buildResolutionButton(
+              'High',
+              PdfResolution.quality,
+              Icons.high_quality,
+            ),
+            _buildResolutionButton('Max', PdfResolution.original, Icons.hd),
+          ],
+        ),
+      ],
     );
   }
 
   Widget _buildActiveSettingIndicator(
     String label,
     IconData icon,
-    bool isActive,
-    VoidCallback onTap,
+    bool active,
   ) {
+    final scheme = Theme.of(context).colorScheme;
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         IconButton(
-          onPressed: onTap,
-          icon: Icon(
-            icon,
-            color: isActive ? Colors.blue[800] : Colors.grey[600],
-          ),
+          onPressed: () => setState(() => _isSettingsExpanded = true),
+          icon: Icon(icon, color: active ? scheme.primary : scheme.outline),
           style: IconButton.styleFrom(
-            backgroundColor: isActive ? Colors.blue[50] : null,
+            backgroundColor: active ? scheme.primaryContainer : null,
           ),
         ),
         Text(
           label,
           style: TextStyle(
             fontSize: 12,
-            color: isActive ? Colors.blue[800] : Colors.grey[600],
-            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+            color: active ? scheme.primary : scheme.outline,
+            fontWeight: active ? FontWeight.bold : FontWeight.normal,
           ),
         ),
       ],
     );
   }
 
-  Widget _buildFilterButton(String label, ColorFilter filter, IconData icon) {
-    final isSelected = _editingOptions.colorFilter == filter;
+  Widget _buildFilterButton(
+    String label,
+    DocumentColorFilter filter,
+    IconData icon,
+  ) {
+    return _buildSelectableButton(
+      label: label,
+      icon: icon,
+      selected: _filter == filter,
+      onPressed: _isProcessing ? null : () => _setColorFilter(filter),
+    );
+  }
 
-    return Column(
-      children: [
-        IconButton(
-          onPressed: () => _setColorFilter(filter),
-          icon: Icon(
-            icon,
-            color: isSelected ? Colors.blue[800] : Colors.grey[600],
-          ),
-          style: IconButton.styleFrom(
-            backgroundColor: isSelected ? Colors.blue[50] : null,
-          ),
-        ),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            color: isSelected ? Colors.blue[800] : Colors.grey[600],
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-          ),
-        ),
-      ],
+  Widget _buildFormatButton(
+    String label,
+    DocumentFormat format,
+    IconData icon,
+  ) {
+    return _buildSelectableButton(
+      label: label,
+      icon: icon,
+      selected: _format == format,
+      onPressed: _isProcessing ? null : () => _setDocumentFormat(format),
     );
   }
 
@@ -872,50 +659,61 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
     PdfResolution resolution,
     IconData icon,
   ) {
-    final isSelected = _selectedResolution == resolution;
+    return _buildSelectableButton(
+      label: label,
+      icon: icon,
+      selected: _selectedResolution == resolution,
+      onPressed: () => _setResolution(resolution),
+    );
+  }
 
+  Widget _buildSelectableButton({
+    required String label,
+    required IconData icon,
+    required bool selected,
+    required VoidCallback? onPressed,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         IconButton(
-          onPressed: () => _setResolution(resolution),
-          icon: Icon(
-            icon,
-            color: isSelected ? Colors.green[800] : Colors.grey[600],
-          ),
+          onPressed: onPressed,
+          icon: Icon(icon, color: selected ? scheme.primary : scheme.outline),
           style: IconButton.styleFrom(
-            backgroundColor: isSelected ? Colors.green[50] : null,
+            backgroundColor: selected ? scheme.primaryContainer : null,
           ),
         ),
         Text(
           label,
           style: TextStyle(
             fontSize: 12,
-            color: isSelected ? Colors.green[800] : Colors.grey[600],
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            color: selected ? scheme.primary : scheme.outline,
+            fontWeight: selected ? FontWeight.bold : FontWeight.normal,
           ),
         ),
       ],
     );
   }
 
-  IconData _getColorFilterIcon(ColorFilter filter) {
+  IconData _getColorFilterIcon(DocumentColorFilter filter) {
     switch (filter) {
-      case ColorFilter.none:
+      case DocumentColorFilter.none:
         return Icons.image;
-      case ColorFilter.highContrast:
+      case DocumentColorFilter.highContrast:
         return Icons.auto_fix_high;
-      case ColorFilter.blackAndWhite:
+      case DocumentColorFilter.blackAndWhite:
         return Icons.filter_b_and_w;
     }
   }
 
-  String _getFilterName(ColorFilter filter) {
+  String _getFilterName(DocumentColorFilter filter) {
     switch (filter) {
-      case ColorFilter.none:
+      case DocumentColorFilter.none:
         return 'Original';
-      case ColorFilter.highContrast:
+      case DocumentColorFilter.highContrast:
         return 'Enhanced';
-      case ColorFilter.blackAndWhite:
+      case DocumentColorFilter.blackAndWhite:
         return 'B&W';
     }
   }
@@ -949,62 +747,20 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
         return Icons.hd;
     }
   }
-
-  Widget _buildFormatButton(
-    String label,
-    DocumentFormat format,
-    IconData icon,
-  ) {
-    final isSelected = _editingOptions.documentFormat == format;
-
-    return Column(
-      children: [
-        IconButton(
-          onPressed: () => _setDocumentFormat(format),
-          icon: Icon(
-            icon,
-            color: isSelected ? Colors.green[800] : Colors.grey[600],
-          ),
-          style: IconButton.styleFrom(
-            backgroundColor: isSelected ? Colors.green[50] : null,
-          ),
-        ),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            color: isSelected ? Colors.green[800] : Colors.grey[600],
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-          ),
-        ),
-      ],
-    );
-  }
-
-  void _setDocumentFormat(DocumentFormat format) {
-    setState(() {
-      _editingOptions = _editingOptions.copyWith(documentFormat: format);
-    });
-
-    // If crop mode is active and we have corners, re-apply crop with new format
-    if (_showCropOverlay && _detectedCorners != null) {
-      _applyCrop();
-    }
-  }
 }
 
-/// Widget for interactive crop overlay with proper scaling
+/// Widget for interactive crop overlay with proper scaling.
 class CropOverlayWidget extends StatefulWidget {
   final Uint8List imageData;
   final List<Offset> corners;
-  final Function(List<Offset>) onCornersChanged;
+  final ValueChanged<List<Offset>> onCornersChanged;
 
   const CropOverlayWidget({
-    Key? key,
+    super.key,
     required this.imageData,
     required this.corners,
     required this.onCornersChanged,
-  }) : super(key: key);
+  });
 
   @override
   State<CropOverlayWidget> createState() => _CropOverlayWidgetState();
@@ -1032,14 +788,14 @@ class _CropOverlayWidgetState extends State<CropOverlayWidget> {
       final ui.Codec codec = await ui.instantiateImageCodec(widget.imageData);
       final ui.FrameInfo frame = await codec.getNextFrame();
       final ui.Image image = frame.image;
-
-      setState(() {
-        _originalImageSize = Size(
-          image.width.toDouble(),
-          image.height.toDouble(),
-        );
-      });
-
+      if (mounted) {
+        setState(() {
+          _originalImageSize = Size(
+            image.width.toDouble(),
+            image.height.toDouble(),
+          );
+        });
+      }
       image.dispose();
     } catch (_) {
       // Image size detection failed; overlay will not render.
@@ -1068,24 +824,13 @@ class _CropOverlayWidgetState extends State<CropOverlayWidget> {
   }
 
   ImageDisplayInfo _calculateImageDisplayInfo(Size containerSize) {
-    if (_originalImageSize == null) {
-      return ImageDisplayInfo(
-        scale: 1.0,
-        offset: Offset.zero,
-        displaySize: containerSize,
-      );
-    }
-
-    // Calculate scale to fit image in container while maintaining aspect ratio
-    final scaleX = containerSize.width / _originalImageSize!.width;
-    final scaleY = containerSize.height / _originalImageSize!.height;
+    final original = _originalImageSize!;
+    final scaleX = containerSize.width / original.width;
+    final scaleY = containerSize.height / original.height;
     final scale = scaleX < scaleY ? scaleX : scaleY;
 
-    // Calculate displayed image size
-    final displayWidth = _originalImageSize!.width * scale;
-    final displayHeight = _originalImageSize!.height * scale;
-
-    // Calculate offset to center the image
+    final displayWidth = original.width * scale;
+    final displayHeight = original.height * scale;
     final offsetX = (containerSize.width - displayWidth) / 2;
     final offsetY = (containerSize.height - displayHeight) / 2;
 
@@ -1097,12 +842,12 @@ class _CropOverlayWidgetState extends State<CropOverlayWidget> {
   }
 }
 
-/// Interactive widget for crop overlay with real-time feedback
+/// Interactive widget for crop overlay with real-time feedback.
 class _CropInteractiveWidget extends StatefulWidget {
   final Uint8List imageData;
   final List<Offset> corners;
   final ImageDisplayInfo imageInfo;
-  final Function(List<Offset>) onCornersChanged;
+  final ValueChanged<List<Offset>> onCornersChanged;
 
   const _CropInteractiveWidget({
     required this.imageData,
@@ -1118,7 +863,6 @@ class _CropInteractiveWidget extends StatefulWidget {
 class _CropInteractiveWidgetState extends State<_CropInteractiveWidget> {
   late List<Offset> _currentCorners;
   int? _draggedCornerIndex;
-  bool _isDragging = false;
 
   @override
   void initState() {
@@ -1145,20 +889,18 @@ class _CropInteractiveWidgetState extends State<_CropInteractiveWidget> {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        // Background image
         Image.memory(
           widget.imageData,
           fit: BoxFit.contain,
           width: double.infinity,
           height: double.infinity,
+          errorBuilder: (context, error, stack) =>
+              const Center(child: Icon(Icons.broken_image, size: 64)),
         ),
-
-        // Crop overlay with real-time updates
         Positioned.fill(
           child: CustomPaint(
             painter: _CropOverlayPainter(
               corners: _currentCorners,
-              imageInfo: widget.imageInfo,
               draggedCornerIndex: _draggedCornerIndex,
             ),
             child: GestureDetector(
@@ -1168,14 +910,11 @@ class _CropInteractiveWidgetState extends State<_CropInteractiveWidget> {
                   _currentCorners,
                 );
                 if (cornerIndex != null) {
-                  setState(() {
-                    _draggedCornerIndex = cornerIndex;
-                    _isDragging = true;
-                  });
+                  setState(() => _draggedCornerIndex = cornerIndex);
                 }
               },
               onPanUpdate: (details) {
-                if (_draggedCornerIndex != null && _isDragging) {
+                if (_draggedCornerIndex != null) {
                   setState(() {
                     _currentCorners[_draggedCornerIndex!] =
                         details.localPosition;
@@ -1183,18 +922,14 @@ class _CropInteractiveWidgetState extends State<_CropInteractiveWidget> {
                 }
               },
               onPanEnd: (details) {
-                if (_draggedCornerIndex != null && _isDragging) {
-                  // Convert back to original image coordinates and notify parent
-                  final originalCorners = _convertToOriginalCoordinates(
-                    _currentCorners,
-                    widget.imageInfo,
+                if (_draggedCornerIndex != null) {
+                  widget.onCornersChanged(
+                    _convertToOriginalCoordinates(
+                      _currentCorners,
+                      widget.imageInfo,
+                    ),
                   );
-                  widget.onCornersChanged(originalCorners);
-
-                  setState(() {
-                    _draggedCornerIndex = null;
-                    _isDragging = false;
-                  });
+                  setState(() => _draggedCornerIndex = null);
                 }
               },
             ),
@@ -1205,14 +940,9 @@ class _CropInteractiveWidgetState extends State<_CropInteractiveWidget> {
   }
 
   int? _findNearestCorner(Offset position, List<Offset> corners) {
-    const double touchRadius =
-        35.0; // Increased for better touch responsiveness
-
+    const double touchRadius = 35.0;
     for (int i = 0; i < corners.length; i++) {
-      final distance = (position - corners[i]).distance;
-      if (distance <= touchRadius) {
-        return i;
-      }
+      if ((position - corners[i]).distance <= touchRadius) return i;
     }
     return null;
   }
@@ -1221,63 +951,57 @@ class _CropInteractiveWidgetState extends State<_CropInteractiveWidget> {
     List<Offset> originalCorners,
     ImageDisplayInfo info,
   ) {
-    return originalCorners.map((corner) {
-      final x = corner.dx * info.scale + info.offset.dx;
-      final y = corner.dy * info.scale + info.offset.dy;
-      return Offset(x, y);
-    }).toList();
+    return originalCorners
+        .map(
+          (c) => Offset(
+            c.dx * info.scale + info.offset.dx,
+            c.dy * info.scale + info.offset.dy,
+          ),
+        )
+        .toList();
   }
 
   List<Offset> _convertToOriginalCoordinates(
     List<Offset> screenCorners,
     ImageDisplayInfo info,
   ) {
-    return screenCorners.map((corner) {
-      final x = (corner.dx - info.offset.dx) / info.scale;
-      final y = (corner.dy - info.offset.dy) / info.scale;
-      return Offset(x, y);
-    }).toList();
+    return screenCorners
+        .map(
+          (c) => Offset(
+            (c.dx - info.offset.dx) / info.scale,
+            (c.dy - info.offset.dy) / info.scale,
+          ),
+        )
+        .toList();
   }
 }
 
-/// Custom painter for crop overlay without BlendMode issues
+/// Custom painter for the crop overlay.
 class _CropOverlayPainter extends CustomPainter {
   final List<Offset> corners;
-  final ImageDisplayInfo imageInfo;
   final int? draggedCornerIndex;
 
-  _CropOverlayPainter({
-    required this.corners,
-    required this.imageInfo,
-    this.draggedCornerIndex,
-  });
+  _CropOverlayPainter({required this.corners, this.draggedCornerIndex});
 
   @override
   void paint(Canvas canvas, Size size) {
     if (corners.length != 4) return;
 
-    // Draw crop area border (no overlay background to avoid black screen)
     final borderPaint = Paint()
       ..color = Colors.blue
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3;
 
-    // Create crop area path
-    final cropPath = Path();
-    cropPath.moveTo(corners[0].dx, corners[0].dy);
+    final cropPath = Path()..moveTo(corners[0].dx, corners[0].dy);
     for (int i = 1; i < 4; i++) {
       cropPath.lineTo(corners[i].dx, corners[i].dy);
     }
     cropPath.close();
-
-    // Draw crop area border
     canvas.drawPath(cropPath, borderPaint);
 
-    // Draw corner handles with enhanced visibility
     final centerPaint = Paint()
       ..color = Colors.white
       ..style = PaintingStyle.fill;
-
     final shadowPaint = Paint()
       ..color = Colors.black.withValues(alpha: 0.3)
       ..style = PaintingStyle.fill
@@ -1286,76 +1010,56 @@ class _CropOverlayPainter extends CustomPainter {
     for (int i = 0; i < corners.length; i++) {
       final corner = corners[i];
       final isDragged = i == draggedCornerIndex;
-
-      // Make dragged corner larger and different color
       final handleRadius = isDragged ? 20.0 : 16.0;
       final centerRadius = isDragged ? 10.0 : 8.0;
 
-      // Use different colors for dragged corner
-      final draggedHandlePaint = Paint()
-        ..color = isDragged
-            ? Colors.orange.withValues(alpha: 0.8)
-            : Colors.blue.withValues(alpha: 0.8)
+      final handlePaint = Paint()
+        ..color = (isDragged ? Colors.orange : Colors.blue).withValues(
+          alpha: 0.8,
+        )
         ..style = PaintingStyle.fill;
-
-      final draggedStrokePaint = Paint()
+      final strokePaint = Paint()
         ..color = isDragged ? Colors.orange : Colors.blue
         ..style = PaintingStyle.stroke
         ..strokeWidth = isDragged ? 4 : 3;
 
-      // Draw shadow for better visibility
       canvas.drawCircle(corner + const Offset(2, 2), handleRadius, shadowPaint);
-
-      // Draw outer circle (larger for better touch)
-      canvas.drawCircle(corner, handleRadius, draggedHandlePaint);
-
-      // Draw inner circle for better visibility
+      canvas.drawCircle(corner, handleRadius, handlePaint);
       canvas.drawCircle(corner, centerRadius, centerPaint);
-
-      // Draw border around inner circle
-      canvas.drawCircle(corner, centerRadius, draggedStrokePaint);
+      canvas.drawCircle(corner, centerRadius, strokePaint);
     }
 
-    // Draw grid lines inside crop area for better alignment
     final gridPaint = Paint()
       ..color = Colors.blue.withValues(alpha: 0.3)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1;
-
-    // Vertical lines
     for (int i = 1; i < 3; i++) {
       final t = i / 3.0;
-      final topPoint = Offset.lerp(corners[0], corners[1], t)!;
-      final bottomPoint = Offset.lerp(corners[3], corners[2], t)!;
-      canvas.drawLine(topPoint, bottomPoint, gridPaint);
-    }
-
-    // Horizontal lines
-    for (int i = 1; i < 3; i++) {
-      final t = i / 3.0;
-      final leftPoint = Offset.lerp(corners[0], corners[3], t)!;
-      final rightPoint = Offset.lerp(corners[1], corners[2], t)!;
-      canvas.drawLine(leftPoint, rightPoint, gridPaint);
+      canvas.drawLine(
+        Offset.lerp(corners[0], corners[1], t)!,
+        Offset.lerp(corners[3], corners[2], t)!,
+        gridPaint,
+      );
+      canvas.drawLine(
+        Offset.lerp(corners[0], corners[3], t)!,
+        Offset.lerp(corners[1], corners[2], t)!,
+        gridPaint,
+      );
     }
   }
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) {
     if (oldDelegate is! _CropOverlayPainter) return true;
-
-    final oldPainter = oldDelegate;
-    // Repaint if corners changed or if drag state changed
-    if (corners.length != oldPainter.corners.length) return true;
-
+    if (corners.length != oldDelegate.corners.length) return true;
     for (int i = 0; i < corners.length; i++) {
-      if (corners[i] != oldPainter.corners[i]) return true;
+      if (corners[i] != oldDelegate.corners[i]) return true;
     }
-
-    return draggedCornerIndex != oldPainter.draggedCornerIndex;
+    return draggedCornerIndex != oldDelegate.draggedCornerIndex;
   }
 }
 
-/// Helper class to store image display information
+/// Helper class to store image display information.
 class ImageDisplayInfo {
   final double scale;
   final Offset offset;

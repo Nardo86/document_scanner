@@ -28,10 +28,25 @@ jobs:
       with:
         flutter-version: '3.32.5'
         channel: 'stable'
-    
+        cache: true
+
+    - name: Assert tag matches pubspec version
+      run: |
+        TAG="${GITHUB_REF_NAME#v}"
+        PUBSPEC=$(grep '^version:' pubspec.yaml | cut -d ' ' -f 2 | cut -d '+' -f 1)
+        echo "tag=$TAG pubspec=$PUBSPEC"
+        if [ "$TAG" != "$PUBSPEC" ]; then
+          echo "::error::Tag v$TAG does not match pubspec version $PUBSPEC"
+          exit 1
+        fi
+
     - name: Install package dependencies
       run: flutter pub get
-    
+
+    - name: Generate mocks
+      run: dart run build_runner build --delete-conflicting-outputs
+      timeout-minutes: 5
+
     - name: Check formatting
       run: dart format --set-exit-if-changed .
       timeout-minutes: 3
@@ -39,20 +54,20 @@ jobs:
     - name: Analyze package code
       run: flutter analyze --no-fatal-infos
       timeout-minutes: 5
-    
+
     - name: Test package
       run: flutter test
       timeout-minutes: 10
-    
+
     - name: Install example app dependencies
       run: flutter pub get
       working-directory: example
-    
+
     - name: Analyze example app code
       run: flutter analyze --no-fatal-infos
       working-directory: example
       timeout-minutes: 5
-    
+
     - name: Build example app APK
       run: flutter build apk --release
       working-directory: example
@@ -112,9 +127,9 @@ jobs:
         - External storage with flexible file naming
         
         ## Requirements
-        - Flutter 3.0.0 or higher
+        - Flutter 3.32.0 or higher
         - Dart SDK 3.8.1 or higher
-        - Android: Camera, Storage, Internet permissions
+        - Android: Camera, Internet (scoped storage — no storage permission needed)
         - iOS: Camera, Photo Library access
         EOF
         

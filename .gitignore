@@ -1,4 +1,6 @@
 # Flutter/Dart/Pub related
+# Libraries (this package) must NOT commit their lockfile; apps (example/) should.
+/pubspec.lock
 **/doc/api/
 **/ios/Flutter/.last_build_id
 .dart_tool/

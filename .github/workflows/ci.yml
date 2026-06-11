@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.32.5'
+          channel: 'stable'
+          cache: true
+
+      - name: Install package dependencies
+        run: flutter pub get
+
+      - name: Generate mocks
+        run: dart run build_runner build --delete-conflicting-outputs
+        timeout-minutes: 5
+
+      - name: Verify formatting
+        run: dart format --set-exit-if-changed .
+        timeout-minutes: 3
+
+      - name: Analyze package
+        run: flutter analyze --no-fatal-infos
+        timeout-minutes: 5
+
+      - name: Run package tests
+        run: flutter test
+        timeout-minutes: 10
+
+      - name: Install example dependencies
+        run: flutter pub get
+        working-directory: example
+
+      - name: Analyze example
+        run: flutter analyze --no-fatal-infos
+        working-directory: example
+        timeout-minutes: 5
+
+  publishability:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.32.5'
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Publish dry-run (informational — distributed via git, not pub.dev)
+        continue-on-error: true
+        run: dart pub publish --dry-run
+
+      - name: pana score (informational)
+        continue-on-error: true
+        run: |
+          dart pub global activate pana
+          dart pub global run pana --no-warning --exit-code-threshold 1000 .
