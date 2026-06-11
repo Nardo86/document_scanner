@@ -83,7 +83,7 @@ jobs:
     - name: Rename APK with version
       run: |
         cd example/build/app/outputs/flutter-apk/
-        mv app-release.apk document_scanner_example_v${{ steps.get_version.outputs.VERSION }}.apk
+        mv app-release.apk DocumentScanner_v${{ steps.get_version.outputs.VERSION }}.apk
         ls -la *.apk
     
     - name: Generate release notes
@@ -139,7 +139,7 @@ jobs:
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v3
       with:
-        files: example/build/app/outputs/flutter-apk/document_scanner_example_v${{ steps.get_version.outputs.VERSION }}.apk
+        files: example/build/app/outputs/flutter-apk/DocumentScanner_v${{ steps.get_version.outputs.VERSION }}.apk
         body_path: release_notes.md
         name: Document Scanner v${{ steps.get_version.outputs.VERSION }}
         tag_name: ${{ github.ref_name }}
