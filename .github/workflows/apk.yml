@@ -44,13 +44,13 @@ jobs:
       - name: Rename APK with version
         run: |
           cd example/build/app/outputs/flutter-apk/
-          mv app-release.apk document_scanner_example_v${{ steps.ver.outputs.VERSION }}.apk
+          mv app-release.apk DocumentScanner_v${{ steps.ver.outputs.VERSION }}.apk
           ls -la *.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: document_scanner_example_v${{ steps.ver.outputs.VERSION }}-apk
-          path: example/build/app/outputs/flutter-apk/document_scanner_example_v${{ steps.ver.outputs.VERSION }}.apk
+          name: DocumentScanner_v${{ steps.ver.outputs.VERSION }}-apk
+          path: example/build/app/outputs/flutter-apk/DocumentScanner_v${{ steps.ver.outputs.VERSION }}.apk
           if-no-files-found: error
           retention-days: 30
