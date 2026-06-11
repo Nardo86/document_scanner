@@ -7,7 +7,7 @@ void main() {
   group('Single Page Quick Actions Tests', () {
     test('DocumentScannerService has showImageEditorFlow method', () {
       // Verify that new shared helper method exists on DocumentScannerService
-      final service = DocumentScannerService();
+      final service = DocumentScannerService.instance;
       expect(service, isNotNull);
 
       // Test that method exists by checking its runtime type

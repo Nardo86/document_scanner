@@ -46,7 +46,7 @@ class ShowcaseState extends ChangeNotifier {
         ? null
         : (customDirectory ?? '').trim();
 
-    DocumentScannerService().configureStorage(
+    DocumentScannerService.instance.configureStorage(
       appName: sanitizedAppName,
       customStorageDirectory: sanitizedDirectory,
     );

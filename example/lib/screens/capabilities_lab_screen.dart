@@ -389,13 +389,13 @@ class _CapabilitiesLabScreenState extends State<CapabilitiesLabScreen> {
     try {
       ScanResult result;
       if (useCamera) {
-        result = await DocumentScannerService().scanDocumentWithProcessing(
+        result = await DocumentScannerService.instance.scanDocumentWithProcessing(
           documentType: _documentType,
           processingOptions: options,
           customFilename: filename,
         );
       } else {
-        result = await DocumentScannerService().importDocumentWithProcessing(
+        result = await DocumentScannerService.instance.importDocumentWithProcessing(
           documentType: _documentType,
           processingOptions: options,
           customFilename: filename,

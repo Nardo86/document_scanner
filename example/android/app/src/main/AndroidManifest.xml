@@ -1,18 +1,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Camera permission -->
     <uses-permission android:name="android.permission.CAMERA" />
-    
-    <!-- Storage permissions -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-    
-    <!-- For Android 11+ (API 30+) -->
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
-    
+
     <!-- Internet for manual download -->
     <uses-permission android:name="android.permission.INTERNET" />
-    
-    <!-- Photo library access for modern Android versions -->
+
+    <!-- Photo library access (Android 13+) for gallery import.
+         The library saves to scoped, app-specific storage, so no
+         WRITE_EXTERNAL_STORAGE / MANAGE_EXTERNAL_STORAGE is required. -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     
     <application

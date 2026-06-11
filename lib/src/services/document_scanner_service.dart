@@ -16,9 +16,13 @@ import '../ui/pdf_preview_widget.dart';
 /// Delegates capture/import to [CameraService], uses [StorageHelper] for file
 /// operations, and pipes data through [ImageProcessor] / [PdfGenerator].
 class DocumentScannerService {
-  factory DocumentScannerService() => _instance;
-
-  DocumentScannerService._internal({
+  /// Creates an independent scanner service.
+  ///
+  /// Each instance owns its own storage configuration (set via
+  /// [configureStorage]), so different host features can target different
+  /// directories. For simple apps that need a single shared configuration,
+  /// use [instance] instead of constructing your own.
+  DocumentScannerService({
     CameraService? cameraService,
     StorageHelper? storageHelper,
     PdfGenerator? pdfGenerator,
@@ -30,22 +34,25 @@ class DocumentScannerService {
        _qrScanner = qrScanner ?? QRScannerService(),
        _imageProcessor = imageProcessor ?? ImageProcessor();
 
-  static final DocumentScannerService _instance =
-      DocumentScannerService._internal();
+  /// Shared convenience instance for apps that use a single configuration.
+  ///
+  /// Configure it once (`DocumentScannerService.instance.configureStorage(...)`)
+  /// and the bundled widgets will use it by default.
+  static final DocumentScannerService instance = DocumentScannerService();
 
+  /// Test seam: construct with explicit collaborators.
+  @visibleForTesting
   DocumentScannerService.withDependencies({
     required CameraService cameraService,
     required StorageHelper storageHelper,
     required PdfGenerator pdfGenerator,
     required QRScannerService qrScanner,
     required ImageProcessor imageProcessor,
-  }) : this._internal(
-         cameraService: cameraService,
-         storageHelper: storageHelper,
-         pdfGenerator: pdfGenerator,
-         qrScanner: qrScanner,
-         imageProcessor: imageProcessor,
-       );
+  }) : _cameraService = cameraService,
+       _storageHelper = storageHelper,
+       _pdfGenerator = pdfGenerator,
+       _qrScanner = qrScanner,
+       _imageProcessor = imageProcessor;
 
   final CameraService _cameraService;
   final StorageHelper _storageHelper;
@@ -136,7 +143,9 @@ class DocumentScannerService {
   // ---------------------------------------------------------------------------
 
   /// Scan a QR code for manual download.
-  Future<QRScanResult> scanQRCode() async {
+  ///
+  /// Needs a [BuildContext] to present the scanner UI.
+  Future<QRScanResult> scanQRCode(BuildContext context) async {
     try {
       final hasPermission = await _cameraService.requestCameraPermission();
       if (!hasPermission) {
@@ -145,7 +154,10 @@ class DocumentScannerService {
           qrData: '',
         );
       }
-      return await _qrScanner.scanQRCode();
+      if (!context.mounted) {
+        return QRScanResult.error(error: 'Context no longer valid', qrData: '');
+      }
+      return await _qrScanner.scanQRCodeWithUI(context);
     } catch (e) {
       return QRScanResult.error(
         error: 'Failed to scan QR code: $e',
@@ -155,7 +167,12 @@ class DocumentScannerService {
   }
 
   /// Scan a QR code and download the document if a URL is detected.
-  Future<ScanResult> scanQRCodeAndDownload({String? customFilename}) async {
+  ///
+  /// Needs a [BuildContext] to present the scanner UI.
+  Future<ScanResult> scanQRCodeAndDownload(
+    BuildContext context, {
+    String? customFilename,
+  }) async {
     try {
       final hasCameraPermission = await _cameraService
           .requestCameraPermission();
@@ -169,7 +186,10 @@ class DocumentScannerService {
         return ScanResult.error(error: 'Storage permission denied');
       }
 
-      final qrResult = await _qrScanner.scanQRCode();
+      if (!context.mounted) {
+        return ScanResult.error(error: 'Context no longer valid');
+      }
+      final qrResult = await _qrScanner.scanQRCodeWithUI(context);
       if (!qrResult.success) {
         return ScanResult.error(error: qrResult.error ?? 'QR scan failed');
       }
@@ -360,6 +380,10 @@ class DocumentScannerService {
       return ScanResult.error(error: 'Storage permission denied');
     }
 
+    if (!context.mounted) {
+      return ScanResult.error(error: 'Context no longer valid');
+    }
+
     try {
       final editResult = await Navigator.push<Map<String, dynamic>?>(
         context,
@@ -432,7 +456,9 @@ class DocumentScannerService {
         customFilename,
       );
 
-      if (finalResult.success && finalResult.document?.pdfData != null) {
+      if (finalResult.success &&
+          finalResult.document?.pdfData != null &&
+          context.mounted) {
         await _showPdfPreview(context, finalResult.document!);
       }
       return finalResult;
@@ -697,12 +723,14 @@ class DocumentScannerService {
     BuildContext context,
     ScannedDocument document,
   ) async {
+    if (!context.mounted) return;
     await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => PdfPreviewWidget(
           pdfData: document.pdfData,
           pdfPath: document.pdfPath,
+          fallbackImage: document.processedImageData,
           title: 'Document Preview',
           onConfirm: () => Navigator.pop(context),
           onCancel: () => Navigator.pop(context),

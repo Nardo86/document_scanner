@@ -177,6 +177,7 @@ class DocumentProcessingOptions {
       'generatePdf': generatePdf,
       'saveImageFile': saveImageFile,
       'pdfResolution': pdfResolution.toString(),
+      'documentFormat': documentFormat?.toString(),
       'customFilename': customFilename,
     };
   }
@@ -198,6 +199,12 @@ class DocumentProcessingOptions {
         (e) => e.toString() == json['pdfResolution'],
         orElse: () => PdfResolution.quality,
       ),
+      documentFormat: json['documentFormat'] == null
+          ? null
+          : DocumentFormat.values.firstWhere(
+              (e) => e.toString() == json['documentFormat'],
+              orElse: () => DocumentFormat.auto,
+            ),
       customFilename: json['customFilename'],
     );
   }
@@ -207,7 +214,7 @@ class DocumentProcessingOptions {
 enum ImageFormat { jpeg, png, webp }
 
 /// Color filter options for image editing
-enum ColorFilter { none, highContrast, blackAndWhite }
+enum DocumentColorFilter { none, highContrast, blackAndWhite }
 
 /// Document format options for crop aspect ratio
 enum DocumentFormat {
@@ -230,27 +237,32 @@ enum PdfResolution {
 /// Image editing options
 class ImageEditingOptions {
   final int rotationDegrees; // 0, 90, 180, 270
-  final ColorFilter colorFilter;
+  final DocumentColorFilter colorFilter;
   final List<Offset>? cropCorners; // 4 corners for cropping
   final DocumentFormat documentFormat; // Format for aspect ratio
 
   const ImageEditingOptions({
     this.rotationDegrees = 0,
-    this.colorFilter = ColorFilter.none,
+    this.colorFilter = DocumentColorFilter.none,
     this.cropCorners,
     this.documentFormat = DocumentFormat.auto,
   });
 
+  /// Returns a copy with the given fields replaced.
+  ///
+  /// Set [clearCropCorners] to drop the crop (since passing `cropCorners: null`
+  /// cannot be distinguished from "leave unchanged").
   ImageEditingOptions copyWith({
     int? rotationDegrees,
-    ColorFilter? colorFilter,
+    DocumentColorFilter? colorFilter,
     List<Offset>? cropCorners,
+    bool clearCropCorners = false,
     DocumentFormat? documentFormat,
   }) {
     return ImageEditingOptions(
       rotationDegrees: rotationDegrees ?? this.rotationDegrees,
       colorFilter: colorFilter ?? this.colorFilter,
-      cropCorners: cropCorners ?? this.cropCorners,
+      cropCorners: clearCropCorners ? null : (cropCorners ?? this.cropCorners),
       documentFormat: documentFormat ?? this.documentFormat,
     );
   }

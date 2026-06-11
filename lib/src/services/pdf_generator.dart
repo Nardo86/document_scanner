@@ -312,13 +312,10 @@ class PdfGenerator {
       documentFormat,
     );
 
-    // Determine fit behavior based on document format
-    // Auto format: maintain aspect ratio (contain)
-    // Specific formats: stretch to fit format (fill)
-    final boxFit =
-        (documentFormat == null || documentFormat == DocumentFormat.auto)
-        ? pw.BoxFit.contain
-        : pw.BoxFit.fill;
+    // Always preserve the image aspect ratio. Stretching (BoxFit.fill) to the
+    // page format distorts the document; the image is already cropped to the
+    // intended shape, so contain is correct and never distorts.
+    const boxFit = pw.BoxFit.contain;
 
     switch (resolution) {
       case PdfResolution.original:

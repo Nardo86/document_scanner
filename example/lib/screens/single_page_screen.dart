@@ -20,7 +20,7 @@ class SinglePageScreen extends StatefulWidget {
 enum _Action { none, guided, camera, gallery }
 
 class _SinglePageScreenState extends State<SinglePageScreen> {
-  final DocumentScannerService _scannerService = DocumentScannerService();
+  final DocumentScannerService _scannerService = DocumentScannerService.instance;
   final TextEditingController _filenameController = TextEditingController();
 
   DocumentType _selectedType = DocumentType.document;

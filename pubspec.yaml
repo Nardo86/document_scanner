@@ -1,41 +1,51 @@
 name: document_scanner
-description: A Flutter package for scanning documents, receipts, and manuals with automatic cropping, filtering, and PDF generation.
-version: 1.2.0
+description: A Flutter package for scanning documents, receipts, and manuals with manual/automatic cropping, perspective correction, filtering, and PDF generation.
+version: 3.0.0
 homepage: https://github.com/Nardo86/document_scanner
+repository: https://github.com/Nardo86/document_scanner
+issue_tracker: https://github.com/Nardo86/document_scanner/issues
 license: MIT
 
+topics:
+  - document-scanner
+  - pdf
+  - camera
+  - image-processing
+  - ocr
+
 environment:
+  # Dart 3.8 ships with Flutter 3.32+, so the Flutter floor must match.
   sdk: ^3.8.1
-  flutter: ">=3.0.0"
+  flutter: ">=3.32.0"
 
 dependencies:
   flutter:
     sdk: flutter
-  
-  # Core dependencies
+
+  # Image decoding / processing (grayscale, Otsu B&W, CLAHE, homography helpers)
   image: ^4.5.4
+
+  # PDF generation
   pdf: ^3.11.1
-  printing: ^5.13.4
-  
-  # PDF viewing
+
+  # Native PDF preview rendering
   pdfx: ^2.4.1
-  
-  # Camera and file handling
-  camera: ^0.11.0+2
+
+  # Live camera capture (guided overlay) + gallery/quick capture
+  camera: ^0.12.0+1
   image_picker: ^1.1.2
-  file_picker: ^10.2.0
-  
-  # QR code scanning
+
+  # QR code scanning (manual download links)
   mobile_scanner: ^7.0.1
-  
-  # HTTP for downloading manuals
+
+  # HTTP for downloading manuals from URLs
   http: ^1.2.2
-  
-  # File system access
+
+  # File-system access and path manipulation
   path_provider: ^2.1.4
   path: ^1.9.1
-  
-  # Permissions
+
+  # Runtime permissions (camera)
   permission_handler: ^12.0.1
 
 dev_dependencies:

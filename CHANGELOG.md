@@ -1,73 +1,90 @@
 # Changelog
 
-## 2.2.0
+## 3.0.0
+
+Major remediation release. Establishes a single, correct version line (the
+earlier `1.x` tags and the never-tagged/withdrawn `2.x` line are superseded).
+**This release contains breaking API changes — see [MIGRATION.md](MIGRATION.md).**
+
+### Breaking changes
+- Renamed the public enum `ColorFilter` → `DocumentColorFilter` to stop colliding
+  with Flutter's `dart:ui`/`material` `ColorFilter`.
+- The barrel (`package:document_scanner/document_scanner.dart`) now exports only
+  the intended public surface (models, `ScanResult`, `DocumentScannerService`,
+  `QRScannerService`, and the widgets). Internal services
+  (`ImageProcessor`, `StorageHelper`, `PdfGenerator`,
+  `ImageProcessingIsolateService`, `CameraService`) are no longer exported.
+- `DocumentScannerService` is no longer a hard singleton: `DocumentScannerService()`
+  now creates an independent instance with its own storage config. Use
+  `DocumentScannerService.instance` for a shared instance. Widgets accept an
+  optional `service:` to target a specific instance.
+- `DocumentScannerService.scanQRCode(...)` and `scanQRCodeAndDownload(...)` now
+  require a `BuildContext` (they present the scanner UI).
+- Storage now uses **scoped, app-specific** storage by default; the
+  `MANAGE_EXTERNAL_STORAGE` permission is no longer used or required.
+
+### Security
+- `downloadManualFromUrl` is hardened: HTTPS-only by default (opt-in cleartext),
+  streamed download with a configurable size cap (DoS guard), request timeout,
+  SSRF guard rejecting private/loopback/link-local hosts, per-hop redirect
+  re-validation, and payload validation by magic bytes (not just Content-Type).
+- Filenames (`customFilename`, `suggestedFilename`, brand/model) are sanitized
+  to a safe basename and writes are asserted to stay within the target
+  directory (path-traversal fix).
 
 ### Fixed
-- **Tests**: rewrote `document_scanner_service_test.dart` to stub
-  `processImageWithAutoCrop` (the actual method called by the refactored
-  pipeline); added missing mock methods (`processImageWithAutoCrop`,
-  `clearEdgeCache`, `dispose`) to generated mocks file; added
-  `importDocumentWithProcessing` test group (15 test cases total).
-- **CI**: removed `continue-on-error: true` from the test step in
-  `build-and-release.yml` so test failures now block releases.
+- **Auto-crop** (`AutoCropper`) rewritten around a correct Otsu white-blob
+  detector with a real homography + bilinear perspective warp. Removed the
+  broken Canny/contour fallback (shared-`List.filled` row aliasing, unbounded
+  recursion, fake 2-corner affine "perspective", and an unrealistic 100 ms
+  timeout that made auto-crop a silent no-op). Failures now return the original
+  image explicitly instead of pretending to crop.
+- **Image editor** (`ImageEditingWidget`) rewritten with a declarative state
+  model rendered from the original image each time. Resolves issues
+  #30/#31/#32: rotation keeps the crop tool available and re-detects edges in
+  the new orientation; reset-crop is reliable (no double-rotation); changing the
+  document format no longer auto-commits a crop; switching filters no longer
+  compounds; cumulative JPEG re-encoding is eliminated.
+- Document-edge detection now actually runs the detector off the UI thread
+  (previously always returned empty, forcing a proportional fallback).
+- Lifecycle/leak fixes: `mounted` guards before post-`await` `setState`;
+  `PdfController` is disposed; `Image.memory` has `errorBuilder`; multi-page
+  finalize no longer force-unwraps missing page data; empty `pdfPath` no longer
+  spins forever; page ids are monotonic so reorder keys stay unique.
+- `DocumentProcessingOptions.toJson`/`fromJson` now round-trips `documentFormat`.
+- PDF generation preserves image aspect ratio (no `BoxFit.fill` distortion).
 
-### Refactored
-- **DocumentScannerService**: eliminated code duplication between scan/import
-  methods via unified `_captureAndProcess` pipeline; removed all `print()`
-  debugging statements; improved ID generation (microseconds).
-- **ImageProcessingIsolateService**: extracted magic numbers to named constants;
-  cleaned up misleading "isolate" comments; simplified fallback chain.
-- **ImageProcessor**: reduced from 1021 to ~700 lines; replaced `luminanceMap`
-  HashMap with flat `Float64List`; extracted all threshold / dimension constants;
-  improved fallback corners to use actual image dimensions; consolidated WebP
-  fallback.
-- **StorageHelper**: replaced hardcoded `/storage/emulated/0/Documents` path
-  with `path_provider` lookup; added `_ensureDirectory` helper.
-- **CameraService**: extracted `_captureMaxLongEdge` and `_resizeJpegQuality`
-  constants.
-- **QRScannerService**: cleaned up `scanQRCode()` docs; removed dead comment.
+### Changed
+- Image processing (decode/detect/warp/encode) runs in a background isolate via
+  `compute`; `ImageProcessingIsolateService` now matches its name.
 
-### Removed
-- Spurious `tatus` file (accidental `git log` output).
-- RobaMia-specific documentation files:
-  `CRITICAL_BUG_SOLUTION.md`, `ROBAMIA_INTEGRATION_EXAMPLE.md`,
-  `IMPLEMENTATION_SUMMARY.md`, `PDF_GENERATOR_ENHANCEMENTS.md`.
-- All `print()` / emoji debug statements from production code.
-- Internal development files: `Agents.md`, `CONTRIBUTING.md`, `test/README.md`.
+### Build / tooling
+- Single source of truth for the version across `pubspec.yaml`, README and this
+  changelog, matching the `v3.0.0` tag.
+- Dependencies: removed unused `printing` and `file_picker`; bumped `camera` to
+  `^0.12.0+1`; fixed the contradictory environment constraint
+  (`flutter: ">=3.32.0"` to match `sdk: ^3.8.1`); aligned example `flutter_lints`.
+- CI: added a PR/branch `ci.yml` (format, analyze, test, `pub publish --dry-run`,
+  pana), regenerate mocks via `build_runner`, assert tag == pubspec version on
+  release, and `dependabot.yml` for actions/pub. Package `pubspec.lock` is no
+  longer committed.
 
-### Added
-- `analysis_options.yaml` with `flutter_lints` rules.
+### Tests
+- Added real coverage: auto-crop accuracy on a synthetic sheet, download
+  security (SSRF/size-cap/magic-byte/cleartext), filename path-traversal, model
+  JSON round-trip, and real PDF (`%PDF`) output assertions.
 
-### Documentation
-- Complete README rewrite for publication readiness.
-- Added CHANGELOG.md.
+---
 
-## 2.1.1
+## 1.2.0
+- Guided camera screen with a draggable A4 trapezoid overlay; the guide corners
+  drive a perspective warp before the editor.
 
-- Fix: version alignment across pubspec.yaml and README.
+## 1.1.x
+- Smart auto-crop groundwork, reset-crop button, rotation/crop reworks
+  (issues #30/#31/#32 — fully resolved in 3.0.0).
 
-## 2.1.0
-
-### Added
-- Auto-crop pipeline: Canny edge detection, dilation, contour extraction,
-  perspective warp with confidence scoring and bounding-box fallback.
-- Tab-driven example app with Quick Scan, Multi Scan, and Lab screens.
-- PDF preview widget using `pdfx` for native rendering.
-- Image editing quick-action flow via `showImageEditorFlow()`.
-- Improved B&W filter (Otsu's method) and Enhanced filter (CLAHE-inspired
-  histogram equalization).
-- 90-degree rotation enforcement in image editor.
-
-## 2.0.0
-
-### Added
-- Complete architecture rewrite with separated services.
-- `CameraService` for camera/gallery with automatic image resizing.
-- `ImageProcessingIsolateService` for background processing.
-- `StorageHelper` for configurable external storage.
-- `PdfGenerator` with format, DPI, and metadata support.
-- Multi-page scanning sessions with `MultiPageScanSession`.
-- `scanDocumentWithProcessing()` / `importDocumentWithProcessing()` methods.
-- `autoProcess` parameter for backward-compatible direct processing.
-- Performance optimisation: 20s -> < 3s processing pipeline.
-- 51 unit and widget tests.
+## 1.0.0
+- Initial public line: camera/gallery scan, image editor (rotate/crop/filters),
+  PDF generation, multi-page sessions, QR scanning + manual download, configurable
+  external storage.

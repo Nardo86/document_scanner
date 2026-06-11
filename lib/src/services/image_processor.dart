@@ -20,9 +20,6 @@ const double _brightnessTooLow = 0.3;
 const double _brightnessTooHigh = 0.8;
 const double _contrastTooLow = 0.3;
 
-/// Contrast multiplier applied during basic enhancement.
-const double _contrastMultiplier = 1.2;
-
 /// Minimum acceptable output dimension (pixels).
 const double _minOutputDimension = 100;
 
@@ -43,12 +40,9 @@ const int _hashSampleBytes = 10;
 /// and [AutoCropper].
 class ImageProcessor {
   final ImageProcessingIsolateService _isolateService;
-  final AutoCropper _autoCropper;
   final Map<String, List<Offset>> _edgeCache = {};
 
-  ImageProcessor()
-    : _isolateService = ImageProcessingIsolateService(),
-      _autoCropper = AutoCropper();
+  ImageProcessor() : _isolateService = ImageProcessingIsolateService();
 
   // -------------------------------------------------------------------------
   // Public API
@@ -56,30 +50,31 @@ class ImageProcessor {
 
   /// Process image according to [options].
   ///
-  /// If [autoCorrectPerspective] is enabled, uses the [AutoCropper] pipeline
-  /// first, then applies colour filters. Otherwise falls back to the
-  /// [ImageProcessingIsolateService] pipeline.
+  /// All heavy work (auto-crop, filters, resize, encode) runs off the UI thread
+  /// in [ImageProcessingIsolateService].
   Future<Uint8List> processImage(
     Uint8List imageData,
     DocumentProcessingOptions options,
   ) async {
+    final result = await processImageWithAutoCrop(imageData, options);
+    final data = result['processedImageData'] as Uint8List?;
+    if (data == null) {
+      throw const ImageProcessingException('No processed image data returned');
+    }
+    return data;
+  }
+
+  /// Process image with optional auto-crop and return a rich result including
+  /// detected edges and metadata. Runs off the UI thread.
+  Future<Map<String, dynamic>> processImageWithAutoCrop(
+    Uint8List imageData,
+    DocumentProcessingOptions options,
+  ) async {
     try {
-      if (options.autoCorrectPerspective) {
-        final autoCropResult = await _autoCropper.autoCrop(imageData);
-
-        if (options.convertToGrayscale || options.enhanceContrast) {
-          return await _applyAdditionalProcessing(
-            autoCropResult.croppedImageData,
-            options,
-          );
-        }
-        return autoCropResult.croppedImageData;
-      }
-
       final job = ImageProcessingJob(
         imageData: imageData,
         options: options,
-        detectEdges: false,
+        detectEdges: options.autoCorrectPerspective,
         jobId: _generateJobId(),
       );
 
@@ -89,58 +84,23 @@ class ImageProcessor {
         throw ImageProcessingException(result.error!);
       }
       if (result.processedImageData == null) {
-        throw ImageProcessingException('No processed image data returned');
+        throw const ImageProcessingException(
+          'No processed image data returned',
+        );
       }
 
-      if (result.detectedEdges != null && result.detectedEdges!.isNotEmpty) {
-        _edgeCache[job.jobId!] = result.detectedEdges!;
+      final edges = result.detectedEdges ?? const <Offset>[];
+      if (edges.isNotEmpty && job.jobId != null) {
+        _edgeCache[job.jobId!] = edges;
       }
 
-      return result.processedImageData!;
-    } catch (e) {
-      throw ImageProcessingException('Failed to process image: $e');
-    }
-  }
-
-  /// Process image with auto-crop and return a rich result including metadata.
-  Future<Map<String, dynamic>> processImageWithAutoCrop(
-    Uint8List imageData,
-    DocumentProcessingOptions options,
-  ) async {
-    try {
-      if (options.autoCorrectPerspective) {
-        final autoCropResult = await _autoCropper.autoCrop(imageData);
-
-        Uint8List finalData = autoCropResult.croppedImageData;
-        if (options.convertToGrayscale || options.enhanceContrast) {
-          finalData = await _applyAdditionalProcessing(
-            autoCropResult.croppedImageData,
-            options,
-          );
-        }
-
-        return {
-          'processedImageData': finalData,
-          'detectedEdges': autoCropResult.corners,
-          'metadata': {
-            'autoCrop': {
-              'applied': true,
-              'durationMs': autoCropResult.durationMs,
-              'confidence': autoCropResult.confidence,
-              'fallbackUsed': autoCropResult.fallbackUsed,
-              ...autoCropResult.metadata,
-            },
-          },
-        };
-      }
-
-      final processedImageData = await processImage(imageData, options);
       return {
-        'processedImageData': processedImageData,
-        'detectedEdges': <Offset>[],
-        'metadata': {
-          'autoCrop': {'applied': false},
-        },
+        'processedImageData': result.processedImageData,
+        'detectedEdges': edges,
+        'metadata': result.metadata ??
+            const {
+              'autoCrop': {'applied': false},
+            },
       };
     } catch (e) {
       throw ImageProcessingException(
@@ -195,7 +155,7 @@ class ImageProcessor {
         format: editingOptions.documentFormat,
       );
 
-      if (editingOptions.colorFilter != ColorFilter.none) {
+      if (editingOptions.colorFilter != DocumentColorFilter.none) {
         // Encode cropped image and run colour filter in isolate
         final croppedData = _encodeImage(image, ImageFormat.jpeg, 0.9);
         return await compute(_applyColorFilterInIsolate, {
@@ -228,7 +188,7 @@ class ImageProcessor {
   static Uint8List _applyColorFilterInIsolate(Map<String, dynamic> params) {
     final imageData = params['imageData'] as Uint8List;
     final filterIndex = params['colorFilter'] as int;
-    final filter = ColorFilter.values[filterIndex];
+    final filter = DocumentColorFilter.values[filterIndex];
 
     img.Image? image = img.decodeImage(imageData);
     if (image == null) throw Exception('Failed to decode image');
@@ -241,7 +201,7 @@ class ImageProcessor {
     final imageData = params['imageData'] as Uint8List;
     final rotation = params['rotation'] as int;
     final filterIndex = params['colorFilter'] as int;
-    final filter = ColorFilter.values[filterIndex];
+    final filter = DocumentColorFilter.values[filterIndex];
 
     img.Image? image = img.decodeImage(imageData);
     if (image == null) throw Exception('Failed to decode image');
@@ -257,14 +217,14 @@ class ImageProcessor {
   /// Static colour filter dispatcher (usable from isolates).
   static img.Image _applyColorFilterStatic(
     img.Image image,
-    ColorFilter filter,
+    DocumentColorFilter filter,
   ) {
     switch (filter) {
-      case ColorFilter.none:
+      case DocumentColorFilter.none:
         return image;
-      case ColorFilter.highContrast:
+      case DocumentColorFilter.highContrast:
         return _applyEnhancedFilterStatic(image);
-      case ColorFilter.blackAndWhite:
+      case DocumentColorFilter.blackAndWhite:
         return _applyBlackAndWhiteFilterStatic(image);
     }
   }
@@ -415,37 +375,40 @@ class ImageProcessor {
     return lookup;
   }
 
+  /// Minimum detection confidence to surface detected corners (below this the
+  /// proportional fallback is a better starting point for the user).
+  static const double _edgeDetectionMinConfidence = 0.4;
+
   /// Detect document edges with caching.
+  ///
+  /// Runs the [AutoCropper] white-blob detector off the UI thread via
+  /// `compute`. Returns the detected quad when reasonably confident, otherwise
+  /// a proportional fallback the user can adjust.
   Future<List<Offset>> detectDocumentEdges(Uint8List imageData) async {
     final cacheKey = _generateImageHash(imageData);
-
     if (_edgeCache.containsKey(cacheKey)) {
       return _edgeCache[cacheKey]!;
     }
 
+    List<Offset> corners;
     try {
-      final job = ImageProcessingJob(
-        imageData: imageData,
-        options: const DocumentProcessingOptions(autoCorrectPerspective: false),
-        detectEdges: true,
-        jobId: cacheKey,
-      );
-
-      final result = await _isolateService.processImageInBackground(job);
-
-      if (result.error != null || result.detectedEdges == null) {
-        final fallback = _getFallbackCorners(imageData);
-        _edgeCache[cacheKey] = fallback;
-        return fallback;
+      final flat = await compute(_detectCornersInIsolate, imageData);
+      if (flat.length >= 9 && flat[8] >= _edgeDetectionMinConfidence) {
+        corners = [
+          Offset(flat[0], flat[1]),
+          Offset(flat[2], flat[3]),
+          Offset(flat[4], flat[5]),
+          Offset(flat[6], flat[7]),
+        ];
+      } else {
+        corners = _getFallbackCorners(imageData);
       }
-
-      _edgeCache[cacheKey] = result.detectedEdges!;
-      return result.detectedEdges!;
     } catch (_) {
-      final fallback = _getFallbackCorners(imageData);
-      _edgeCache[cacheKey] = fallback;
-      return fallback;
+      corners = _getFallbackCorners(imageData);
     }
+
+    _edgeCache[cacheKey] = corners;
+    return corners;
   }
 
   /// Analyse image quality and return suggestions.
@@ -868,25 +831,6 @@ class ImageProcessor {
   // Misc helpers
   // -------------------------------------------------------------------------
 
-  Future<Uint8List> _applyAdditionalProcessing(
-    Uint8List imageData,
-    DocumentProcessingOptions options,
-  ) async {
-    img.Image? image = img.decodeImage(imageData);
-    if (image == null) {
-      throw ImageProcessingException('Failed to decode image data');
-    }
-    if (options.convertToGrayscale) image = img.grayscale(image);
-    if (options.enhanceContrast) {
-      image = img.adjustColor(image, contrast: _contrastMultiplier);
-    }
-    return _encodeImage(
-      image,
-      options.outputFormat,
-      options.compressionQuality,
-    );
-  }
-
   Uint8List _encodeImage(img.Image image, ImageFormat format, double quality) {
     switch (format) {
       case ImageFormat.jpeg:
@@ -935,4 +879,16 @@ class ImageProcessingException implements Exception {
 
   @override
   String toString() => 'ImageProcessingException: $message';
+}
+
+/// Top-level entry point for `compute`: detect document corners off the UI
+/// thread. Returns `[x0,y0,x1,y1,x2,y2,x3,y3, confidence]`, or an empty list
+/// when no document is found.
+List<double> _detectCornersInIsolate(Uint8List imageData) {
+  final result = AutoCropper().detectCorners(imageData);
+  if (result == null) return const [];
+  return <double>[
+    for (final c in result.corners) ...[c.dx, c.dy],
+    result.confidence,
+  ];
 }

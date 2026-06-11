@@ -1,18 +1,29 @@
+import 'dart:async';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:flutter/material.dart';
-import 'dart:async';
 
 import '../models/scanned_document.dart';
 import '../models/scan_result.dart';
 
 /// Service for QR code scanning and manual download
 class QRScannerService {
+  /// Maximum bytes accepted from a download before aborting (DoS guard).
+  static const int maxDownloadBytes = 25 * 1024 * 1024; // 25 MB
+
+  /// Network timeout for download / metadata requests.
+  static const Duration networkTimeout = Duration(seconds: 30);
+
+  /// Maximum number of HTTP redirects followed (each re-validated).
+  static const int maxRedirects = 5;
+
   /// Scan a QR code.
   ///
-  /// This overload does not have access to a [BuildContext] so it cannot show
-  /// the scanner UI. Prefer [scanQRCodeWithUI] when a context is available.
+  /// This overload has no [BuildContext] so it cannot show the scanner UI and
+  /// always returns an error. Use [scanQRCodeWithUI] instead.
+  @Deprecated('Use scanQRCodeWithUI(context); this overload cannot show UI.')
   Future<QRScanResult> scanQRCode() async {
     return QRScanResult.error(
       error:
@@ -74,32 +85,45 @@ class QRScannerService {
     }
   }
 
-  /// Download manual from URL (typically from QR code)
-  Future<ScannedDocument?> downloadManualFromUrl(String url) async {
+  /// Download a manual (PDF or image) from [url], typically obtained from a QR
+  /// code.
+  ///
+  /// Security controls:
+  /// - HTTPS only by default ([allowInsecureHttp] opts into cleartext).
+  /// - Rejects private / loopback / link-local hosts (SSRF guard).
+  /// - Caps the response at [maxDownloadBytes] via streaming (DoS guard).
+  /// - Enforces a [networkTimeout].
+  /// - Re-validates every redirect hop.
+  /// - Validates the payload by magic bytes, not just the Content-Type header.
+  Future<ScannedDocument?> downloadManualFromUrl(
+    String url, {
+    bool allowInsecureHttp = false,
+    int? maxBytes,
+    http.Client? client,
+  }) async {
+    final ownsClient = client == null;
+    final httpClient = client ?? http.Client();
     try {
-      // Validate URL
-      if (!_isValidUrl(url)) {
-        throw Exception('Invalid URL format');
+      final result = await _fetch(
+        httpClient,
+        url,
+        allowInsecureHttp: allowInsecureHttp,
+        maxBytes: maxBytes ?? maxDownloadBytes,
+      );
+
+      final bytes = result.bytes;
+      final contentType = result.contentType;
+      final kind = _detectPayloadKind(bytes, contentType);
+      if (kind == _PayloadKind.unsupported) {
+        throw Exception(
+          'Unsupported or unverified file type (content-type: $contentType)',
+        );
       }
 
-      // Download file
-      final response = await http.get(Uri.parse(url));
-      if (response.statusCode != 200) {
-        throw Exception('Failed to download: HTTP ${response.statusCode}');
-      }
+      final filename = _extractFilename(url, result.headers);
 
-      // Validate file type
-      final contentType = response.headers['content-type'] ?? '';
-      if (!_isSupportedFileType(contentType)) {
-        throw Exception('Unsupported file type: $contentType');
-      }
-
-      // Extract filename from URL or Content-Disposition header
-      final filename = _extractFilename(url, response.headers);
-
-      // Create scanned document
       final document = ScannedDocument(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
         type: DocumentType.manual,
         originalPath: url,
         scanTime: DateTime.now(),
@@ -109,27 +133,156 @@ class QRScannerService {
           'url': url,
           'contentType': contentType,
           'filename': filename,
-          'fileSize': response.bodyBytes.length,
+          'fileSize': bytes.length,
           'downloadTime': DateTime.now().toIso8601String(),
         },
       );
 
-      // For PDF files, store directly
-      if (contentType.contains('pdf')) {
+      if (kind == _PayloadKind.pdf) {
         return document.copyWith(
-          pdfData: response.bodyBytes,
+          pdfData: bytes,
           metadata: {...document.metadata, 'isPdf': true},
         );
       }
-
-      // For images, store as raw data for processing
       return document.copyWith(
-        rawImageData: response.bodyBytes,
+        rawImageData: bytes,
         metadata: {...document.metadata, 'needsProcessing': true},
       );
-    } catch (e) {
-      throw Exception('Failed to download manual: $e');
+    } finally {
+      if (ownsClient) httpClient.close();
     }
+  }
+
+  /// Streamed fetch with redirect re-validation and a hard byte cap.
+  Future<_FetchResult> _fetch(
+    http.Client client,
+    String url, {
+    required bool allowInsecureHttp,
+    required int maxBytes,
+  }) async {
+    var uri = _parseAndValidate(url, allowInsecureHttp: allowInsecureHttp);
+
+    for (var hop = 0; hop <= maxRedirects; hop++) {
+      final request = http.Request('GET', uri)..followRedirects = false;
+      final streamed = await client.send(request).timeout(networkTimeout);
+
+      // Handle redirects manually so each target is re-validated.
+      if (streamed.statusCode >= 300 && streamed.statusCode < 400) {
+        final location = streamed.headers['location'];
+        await streamed.stream.drain<void>();
+        if (location == null || hop == maxRedirects) {
+          throw Exception('Too many or invalid redirects');
+        }
+        uri = _parseAndValidate(
+          uri.resolve(location).toString(),
+          allowInsecureHttp: allowInsecureHttp,
+        );
+        continue;
+      }
+
+      if (streamed.statusCode != 200) {
+        await streamed.stream.drain<void>();
+        throw Exception('Failed to download: HTTP ${streamed.statusCode}');
+      }
+
+      // Reject early if the advertised length already exceeds the cap.
+      final declared = streamed.contentLength;
+      if (declared != null && declared > maxBytes) {
+        await streamed.stream.drain<void>();
+        throw Exception('Download too large: $declared bytes (max $maxBytes)');
+      }
+
+      final builder = BytesBuilder(copy: false);
+      await for (final chunk in streamed.stream.timeout(networkTimeout)) {
+        builder.add(chunk);
+        if (builder.length > maxBytes) {
+          throw Exception('Download exceeded $maxBytes bytes');
+        }
+      }
+
+      return _FetchResult(
+        bytes: builder.takeBytes(),
+        contentType: streamed.headers['content-type'] ?? '',
+        headers: streamed.headers,
+      );
+    }
+    throw Exception('Too many redirects');
+  }
+
+  /// Parse [url] and reject unsafe schemes/hosts (SSRF guard).
+  Uri _parseAndValidate(String url, {required bool allowInsecureHttp}) {
+    final uri = Uri.tryParse(url);
+    if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
+      throw Exception('Invalid URL: $url');
+    }
+    final scheme = uri.scheme.toLowerCase();
+    if (scheme != 'https' && !(allowInsecureHttp && scheme == 'http')) {
+      throw Exception('Refusing non-HTTPS URL: $url');
+    }
+    if (_isBlockedHost(uri.host)) {
+      throw Exception('Refusing request to private/loopback host: ${uri.host}');
+    }
+    return uri;
+  }
+
+  /// Block localhost and private / loopback / link-local literal addresses.
+  bool _isBlockedHost(String host) {
+    final h = host.toLowerCase();
+    if (h == 'localhost' || h.endsWith('.localhost') || h == '::1') return true;
+
+    final v4 = RegExp(r'^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$').firstMatch(h);
+    if (v4 != null) {
+      final a = int.parse(v4.group(1)!);
+      final b = int.parse(v4.group(2)!);
+      if (a == 10) return true; // 10.0.0.0/8
+      if (a == 127) return true; // loopback
+      if (a == 0) return true; // 0.0.0.0/8
+      if (a == 169 && b == 254) return true; // link-local (incl. cloud metadata)
+      if (a == 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
+      if (a == 192 && b == 168) return true; // 192.168.0.0/16
+    }
+    // IPv6 unique-local / link-local prefixes.
+    if (h.startsWith('fe80:') || h.startsWith('fc') || h.startsWith('fd')) {
+      return true;
+    }
+    return false;
+  }
+
+  /// Classify the payload by magic bytes, cross-checked with [contentType].
+  _PayloadKind _detectPayloadKind(Uint8List bytes, String contentType) {
+    if (bytes.length >= 5 &&
+        bytes[0] == 0x25 && // %
+        bytes[1] == 0x50 && // P
+        bytes[2] == 0x44 && // D
+        bytes[3] == 0x46 && // F
+        bytes[4] == 0x2D) {
+      // -
+      return _PayloadKind.pdf;
+    }
+    final isJpeg = bytes.length >= 3 &&
+        bytes[0] == 0xFF &&
+        bytes[1] == 0xD8 &&
+        bytes[2] == 0xFF;
+    final isPng = bytes.length >= 8 &&
+        bytes[0] == 0x89 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x4E &&
+        bytes[3] == 0x47;
+    final isGif = bytes.length >= 3 &&
+        bytes[0] == 0x47 &&
+        bytes[1] == 0x49 &&
+        bytes[2] == 0x46;
+    final isWebp = bytes.length >= 12 &&
+        bytes[0] == 0x52 && // R
+        bytes[1] == 0x49 && // I
+        bytes[2] == 0x46 && // F
+        bytes[3] == 0x46 && // F
+        bytes[8] == 0x57 && // W
+        bytes[9] == 0x45 && // E
+        bytes[10] == 0x42 && // B
+        bytes[11] == 0x50; // P
+    if (isJpeg || isPng || isGif || isWebp) return _PayloadKind.image;
+    return _PayloadKind.unsupported;
   }
 
   /// Determine content type of QR code data
@@ -155,16 +308,6 @@ class QRScannerService {
         lowerUrl.contains('guide') ||
         lowerUrl.contains('support') ||
         lowerUrl.contains('download');
-  }
-
-  /// Validate URL format
-  bool _isValidUrl(String url) {
-    try {
-      final uri = Uri.parse(url);
-      return uri.hasScheme && (uri.scheme == 'http' || uri.scheme == 'https');
-    } catch (e) {
-      return false;
-    }
   }
 
   /// Check if file type is supported
@@ -198,9 +341,10 @@ class QRScannerService {
   }
 
   /// Validate manual URL before downloading
-  Future<bool> validateManualUrl(String url) async {
+  Future<bool> validateManualUrl(String url, {bool allowInsecureHttp = false}) async {
     try {
-      final response = await http.head(Uri.parse(url));
+      final uri = _parseAndValidate(url, allowInsecureHttp: allowInsecureHttp);
+      final response = await http.head(uri).timeout(networkTimeout);
       return response.statusCode == 200 &&
           _isSupportedFileType(response.headers['content-type'] ?? '');
     } catch (e) {
@@ -209,9 +353,13 @@ class QRScannerService {
   }
 
   /// Get manual metadata without downloading
-  Future<Map<String, dynamic>> getManualMetadata(String url) async {
+  Future<Map<String, dynamic>> getManualMetadata(
+    String url, {
+    bool allowInsecureHttp = false,
+  }) async {
     try {
-      final response = await http.head(Uri.parse(url));
+      final uri = _parseAndValidate(url, allowInsecureHttp: allowInsecureHttp);
+      final response = await http.head(uri).timeout(networkTimeout);
 
       return {
         'url': url,
@@ -334,4 +482,20 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
       ),
     );
   }
+}
+
+/// Classification of a downloaded payload, decided by magic bytes.
+enum _PayloadKind { pdf, image, unsupported }
+
+/// Result of a bounded, validated fetch.
+class _FetchResult {
+  final Uint8List bytes;
+  final String contentType;
+  final Map<String, String> headers;
+
+  const _FetchResult({
+    required this.bytes,
+    required this.contentType,
+    required this.headers,
+  });
 }

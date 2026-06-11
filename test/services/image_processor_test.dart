@@ -238,7 +238,7 @@ void main() {
 
       test('applies high contrast filter', () async {
         final options = const ImageEditingOptions(
-          colorFilter: ColorFilter.highContrast,
+          colorFilter: DocumentColorFilter.highContrast,
         );
         final result = await imageProcessor.applyImageEditing(
           testImageData,
@@ -251,7 +251,7 @@ void main() {
 
       test('applies black and white filter', () async {
         final options = const ImageEditingOptions(
-          colorFilter: ColorFilter.blackAndWhite,
+          colorFilter: DocumentColorFilter.blackAndWhite,
         );
         final result = await imageProcessor.applyImageEditing(
           testImageData,
@@ -291,7 +291,7 @@ void main() {
         ];
         final options = ImageEditingOptions(
           rotationDegrees: 90,
-          colorFilter: ColorFilter.highContrast,
+          colorFilter: DocumentColorFilter.highContrast,
           cropCorners: corners,
           documentFormat: DocumentFormat.square,
         );
@@ -562,7 +562,7 @@ void main() {
         final textImage = _createTextLikeImage(200, 200);
 
         final options = const ImageEditingOptions(
-          colorFilter: ColorFilter.blackAndWhite,
+          colorFilter: DocumentColorFilter.blackAndWhite,
         );
         final result = await imageProcessor.applyImageEditing(
           textImage,
@@ -591,7 +591,7 @@ void main() {
         final darkImage = _createDarkImage(200, 200);
 
         final options = const ImageEditingOptions(
-          colorFilter: ColorFilter.blackAndWhite,
+          colorFilter: DocumentColorFilter.blackAndWhite,
         );
         final result = await imageProcessor.applyImageEditing(
           darkImage,
@@ -617,7 +617,7 @@ void main() {
         final darkImage = _createDarkImage(100, 100);
 
         final options = const ImageEditingOptions(
-          colorFilter: ColorFilter.blackAndWhite,
+          colorFilter: DocumentColorFilter.blackAndWhite,
         );
 
         final lightResult = await imageProcessor.applyImageEditing(
@@ -676,7 +676,7 @@ void main() {
         final lowContrastImage = _createLowContrastImage(200, 200);
 
         final options = const ImageEditingOptions(
-          colorFilter: ColorFilter.highContrast,
+          colorFilter: DocumentColorFilter.highContrast,
         );
         final result = await imageProcessor.applyImageEditing(
           lowContrastImage,
@@ -707,7 +707,7 @@ void main() {
         final variedImage = _createLowContrastImage(200, 200);
 
         final options = const ImageEditingOptions(
-          colorFilter: ColorFilter.highContrast,
+          colorFilter: DocumentColorFilter.highContrast,
         );
         final result = await imageProcessor.applyImageEditing(
           variedImage,
@@ -772,7 +772,7 @@ void main() {
         final colorImage = _createColorfulImage(100, 100);
 
         final options = const ImageEditingOptions(
-          colorFilter: ColorFilter.highContrast,
+          colorFilter: DocumentColorFilter.highContrast,
         );
         final result = await imageProcessor.applyImageEditing(
           colorImage,
@@ -802,7 +802,7 @@ void main() {
 
         // Test via manual editor
         final editOptions = const ImageEditingOptions(
-          colorFilter: ColorFilter.blackAndWhite,
+          colorFilter: DocumentColorFilter.blackAndWhite,
         );
         final editResult = await imageProcessor.applyImageEditing(
           testImage,

@@ -17,22 +17,28 @@ class MultiPageScannerWidget extends StatefulWidget {
   final Function(String)? onError;
   final Widget? customHeader;
 
+  /// Optional scanner service (e.g. one configured with a custom storage
+  /// directory). Defaults to [DocumentScannerService.instance].
+  final DocumentScannerService? service;
+
   const MultiPageScannerWidget({
-    Key? key,
+    super.key,
     required this.documentType,
     required this.onScanComplete,
     this.processingOptions,
     this.customFilename,
     this.onError,
     this.customHeader,
-  }) : super(key: key);
+    this.service,
+  });
 
   @override
   State<MultiPageScannerWidget> createState() => _MultiPageScannerWidgetState();
 }
 
 class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
-  final DocumentScannerService _scannerService = DocumentScannerService();
+  late final DocumentScannerService _scannerService =
+      widget.service ?? DocumentScannerService.instance;
   final PdfGenerator _pdfGenerator = PdfGenerator();
 
   MultiPageScanSession? _currentSession;
@@ -40,6 +46,7 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
   String? _currentError;
   bool _isPreviewMode = false;
   int _selectedPageIndex = 0;
+  int _pageCounter = 0; // monotonic, never reused after delete
 
   @override
   Widget build(BuildContext context) {
@@ -243,7 +250,18 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: page.processedImageData != null
-                    ? Image.memory(page.processedImageData!, fit: BoxFit.cover)
+                    ? Image.memory(
+                        page.processedImageData!,
+                        fit: BoxFit.cover,
+                        cacheWidth: 400, // decode at thumbnail size, not full-res
+                        errorBuilder: (context, error, stack) => const Center(
+                          child: Icon(
+                            Icons.broken_image,
+                            size: 40,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      )
                     : const Center(
                         child: Icon(Icons.image, size: 40, color: Colors.grey),
                       ),
@@ -308,6 +326,11 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
                       child: Image.memory(
                         page.processedImageData!,
                         fit: BoxFit.contain,
+                        errorBuilder: (context, error, stack) => const Icon(
+                          Icons.broken_image,
+                          size: 80,
+                          color: Colors.white,
+                        ),
                       ),
                     )
                   : const Icon(Icons.image, size: 80, color: Colors.white),
@@ -447,7 +470,7 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
     } catch (e) {
       _handleError('Error scanning first page: $e');
     } finally {
-      setState(() => _isProcessing = false);
+      if (mounted) setState(() => _isProcessing = false);
     }
   }
 
@@ -476,24 +499,29 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
     } catch (e) {
       _handleError('Error adding page: $e');
     } finally {
-      setState(() => _isProcessing = false);
+      if (mounted) setState(() => _isProcessing = false);
     }
   }
 
   /// Delete a page
   void _deletePage(int index) {
-    if (_currentSession == null || index >= _currentSession!.pages.length)
+    final session = _currentSession;
+    if (session == null || index < 0 || index >= session.pages.length) {
       return;
-
-    final page = _currentSession!.pages[index];
-    _currentSession = _currentSession!.removePage(page.id);
-
-    // Adjust selected page index if needed
-    if (_selectedPageIndex >= _currentSession!.pages.length) {
-      _selectedPageIndex = _currentSession!.pages.length - 1;
     }
 
-    setState(() {});
+    final page = session.pages[index];
+    setState(() {
+      _currentSession = session.removePage(page.id);
+      final remaining = _currentSession!.pages.length;
+      if (remaining == 0) {
+        // Nothing left to preview; fall back to the initial scan view.
+        _isPreviewMode = false;
+        _selectedPageIndex = 0;
+      } else if (_selectedPageIndex >= remaining) {
+        _selectedPageIndex = remaining - 1;
+      }
+    });
   }
 
   /// Preview a specific page
@@ -513,9 +541,10 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
       builder: (context) => _PageReorderDialog(pages: _currentSession!.pages),
     );
 
-    if (reorderedPages != null) {
-      _currentSession = _currentSession!.reorderPages(reorderedPages);
-      setState(() {});
+    if (reorderedPages != null && mounted) {
+      setState(() {
+        _currentSession = _currentSession!.reorderPages(reorderedPages);
+      });
     }
   }
 
@@ -530,10 +559,19 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
     });
 
     try {
-      // Generate multi-page PDF
-      final imageDataList = _currentSession!.pages
-          .map((page) => page.processedImageData!)
-          .toList();
+      // Generate multi-page PDF. Fall back to raw bytes for any page whose
+      // processed data is missing (e.g. the user cancelled that page's editor),
+      // and skip pages with no usable bytes rather than crashing.
+      final imageDataList = <Uint8List>[
+        for (final page in _currentSession!.pages)
+          if ((page.processedImageData ?? page.rawImageData) case final data?)
+            data,
+      ];
+
+      if (imageDataList.isEmpty) {
+        _handleError('No valid page images to finalize');
+        return;
+      }
 
       final pdfData = await _pdfGenerator.generateMultiPagePdf(
         imageDataList: imageDataList,
@@ -571,18 +609,22 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
     } catch (e) {
       _handleError('Error finalizing document: $e');
     } finally {
-      setState(() => _isProcessing = false);
+      if (mounted) setState(() => _isProcessing = false);
     }
   }
 
   /// Show PDF preview before final completion
   Future<void> _showPdfPreview(ScannedDocument document) async {
+    if (!mounted) return;
     await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => PdfPreviewWidget(
           pdfData: document.pdfData,
           pdfPath: document.pdfPath,
+          fallbackImage: document.pages.isNotEmpty
+              ? document.pages.first.processedImageData
+              : document.processedImageData,
           title: 'Multi-Page Document Preview',
           onConfirm: () {
             Navigator.pop(context);
@@ -610,6 +652,8 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
       _addPageToSession(document, pageNumber, isFirstPage);
       return;
     }
+
+    if (!mounted) return;
 
     try {
       // Navigate to image editing screen
@@ -659,35 +703,39 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
     int pageNumber,
     bool isFirstPage,
   ) {
-    if (isFirstPage) {
-      // Create new session for first page
-      _currentSession = MultiPageScanSession(
-        sessionId: document.id,
-        documentType: widget.documentType,
-        processingOptions: document.processingOptions,
-        startTime: DateTime.now(),
-        customFilename: widget.customFilename,
+    if (!mounted) return;
+    setState(() {
+      if (isFirstPage) {
+        // Create new session for first page
+        _currentSession = MultiPageScanSession(
+          sessionId: document.id,
+          documentType: widget.documentType,
+          processingOptions: document.processingOptions,
+          startTime: DateTime.now(),
+          customFilename: widget.customFilename,
+        );
+        _pageCounter = 0;
+      }
+
+      // Add page to session with a monotonic id (never reused after a delete,
+      // so ReorderableListView keys stay unique).
+      final newPage = DocumentPage(
+        id: '${_currentSession!.sessionId}_page_${_pageCounter++}',
+        pageNumber: pageNumber,
+        originalPath: document.originalPath,
+        scanTime: document.scanTime,
+        rawImageData: document.rawImageData,
+        processedImageData: document.processedImageData,
+        metadata: document.metadata,
       );
-    }
 
-    // Add page to session
-    final newPage = DocumentPage(
-      id: '${_currentSession!.sessionId}_page_$pageNumber',
-      pageNumber: pageNumber,
-      originalPath: document.originalPath,
-      scanTime: document.scanTime,
-      rawImageData: document.rawImageData,
-      processedImageData: document.processedImageData,
-      metadata: document.metadata,
-    );
-
-    _currentSession = _currentSession!.addPage(newPage);
-    setState(() {});
+      _currentSession = _currentSession!.addPage(newPage);
+    });
   }
 
   /// Handle error
   void _handleError(String error) {
-    setState(() => _currentError = error);
+    if (mounted) setState(() => _currentError = error);
     widget.onError?.call(error);
   }
 
