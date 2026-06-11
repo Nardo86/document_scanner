@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -19,7 +18,16 @@ http.Client _respondWith(
   });
 }
 
-final _pdfMagic = <int>[0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x37]; // %PDF-1.7
+final _pdfMagic = <int>[
+  0x25,
+  0x50,
+  0x44,
+  0x46,
+  0x2D,
+  0x31,
+  0x2E,
+  0x37,
+]; // %PDF-1.7
 final _jpegMagic = <int>[0xFF, 0xD8, 0xFF, 0xE0, 0, 0, 0, 0];
 
 void main() {
@@ -118,18 +126,20 @@ void main() {
       );
     });
 
-    test('rejects payloads whose magic bytes do not match (content spoofing)',
-        () async {
-      // Claims to be a PDF but the bytes are neither PDF nor a known image.
-      final client = _respondWith([0x00, 0x01, 0x02, 0x03, 0x04, 0x05]);
-      expect(
-        () => service.downloadManualFromUrl(
-          'https://example.com/fake.pdf',
-          client: client,
-        ),
-        throwsA(isA<Exception>()),
-      );
-    });
+    test(
+      'rejects payloads whose magic bytes do not match (content spoofing)',
+      () async {
+        // Claims to be a PDF but the bytes are neither PDF nor a known image.
+        final client = _respondWith([0x00, 0x01, 0x02, 0x03, 0x04, 0x05]);
+        expect(
+          () => service.downloadManualFromUrl(
+            'https://example.com/fake.pdf',
+            client: client,
+          ),
+          throwsA(isA<Exception>()),
+        );
+      },
+    );
 
     test('rejects non-200 responses', () async {
       final client = _respondWith(_pdfMagic, status: 404);

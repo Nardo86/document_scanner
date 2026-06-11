@@ -121,7 +121,9 @@ class AutoCropper {
       metadata['blobRatio'] = detection.blobRatio;
 
       return AutoCropResult(
-        croppedImageData: Uint8List.fromList(img.encodeJpg(warped, quality: 95)),
+        croppedImageData: Uint8List.fromList(
+          img.encodeJpg(warped, quality: 95),
+        ),
         corners: corners,
         durationMs: stopwatch.elapsedMilliseconds,
         confidence: detection.confidence,
@@ -189,7 +191,10 @@ class AutoCropper {
     for (var y = 0; y < height; y++) {
       for (var x = 0; x < width; x++) {
         final p = image.getPixel(x, y);
-        final lum = (0.299 * p.r + 0.587 * p.g + 0.114 * p.b).round().clamp(0, 255);
+        final lum = (0.299 * p.r + 0.587 * p.g + 0.114 * p.b).round().clamp(
+          0,
+          255,
+        );
         luminance[idx++] = lum;
         histogram[lum]++;
       }
@@ -218,7 +223,9 @@ class AutoCropper {
         final cx = ci % width;
         final cy = ci ~/ width;
         // 4-connected neighbours.
-        if (cx > 0) _visit(ci - 1, nextLabel, threshold, luminance, labels, queue);
+        if (cx > 0) {
+          _visit(ci - 1, nextLabel, threshold, luminance, labels, queue);
+        }
         if (cx < width - 1) {
           _visit(ci + 1, nextLabel, threshold, luminance, labels, queue);
         }
@@ -246,7 +253,10 @@ class AutoCropper {
     //   TL = min(x+y), BR = max(x+y), TR = max(x-y), BL = min(x-y).
     double minSum = double.infinity, maxSum = -double.infinity;
     double minDiff = double.infinity, maxDiff = -double.infinity;
-    Offset tl = Offset.zero, tr = Offset.zero, br = Offset.zero, bl = Offset.zero;
+    Offset tl = Offset.zero,
+        tr = Offset.zero,
+        br = Offset.zero,
+        bl = Offset.zero;
     idx = 0;
     for (var y = 0; y < height; y++) {
       for (var x = 0; x < width; x++) {
@@ -499,12 +509,7 @@ class AutoCropper {
     return AutoCropResult(
       // Return the ORIGINAL bytes unchanged (no silent re-encode loss).
       croppedImageData: originalData,
-      corners: [
-        const Offset(0, 0),
-        Offset(w, 0),
-        Offset(w, h),
-        Offset(0, h),
-      ],
+      corners: [const Offset(0, 0), Offset(w, 0), Offset(w, h), Offset(0, h)],
       durationMs: stopwatch.elapsedMilliseconds,
       confidence: confidence,
       fallbackUsed: true,

@@ -77,7 +77,8 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Publish dry-run
+      - name: Publish dry-run (informational — distributed via git, not pub.dev)
+        continue-on-error: true
         run: dart pub publish --dry-run
 
       - name: pana score (informational)

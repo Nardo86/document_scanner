@@ -230,14 +230,18 @@ class QRScannerService {
     final h = host.toLowerCase();
     if (h == 'localhost' || h.endsWith('.localhost') || h == '::1') return true;
 
-    final v4 = RegExp(r'^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$').firstMatch(h);
+    final v4 = RegExp(
+      r'^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$',
+    ).firstMatch(h);
     if (v4 != null) {
       final a = int.parse(v4.group(1)!);
       final b = int.parse(v4.group(2)!);
       if (a == 10) return true; // 10.0.0.0/8
       if (a == 127) return true; // loopback
       if (a == 0) return true; // 0.0.0.0/8
-      if (a == 169 && b == 254) return true; // link-local (incl. cloud metadata)
+      if (a == 169 && b == 254) {
+        return true; // link-local (incl. cloud metadata)
+      }
       if (a == 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
       if (a == 192 && b == 168) return true; // 192.168.0.0/16
     }
@@ -259,20 +263,24 @@ class QRScannerService {
       // -
       return _PayloadKind.pdf;
     }
-    final isJpeg = bytes.length >= 3 &&
+    final isJpeg =
+        bytes.length >= 3 &&
         bytes[0] == 0xFF &&
         bytes[1] == 0xD8 &&
         bytes[2] == 0xFF;
-    final isPng = bytes.length >= 8 &&
+    final isPng =
+        bytes.length >= 8 &&
         bytes[0] == 0x89 &&
         bytes[1] == 0x50 &&
         bytes[2] == 0x4E &&
         bytes[3] == 0x47;
-    final isGif = bytes.length >= 3 &&
+    final isGif =
+        bytes.length >= 3 &&
         bytes[0] == 0x47 &&
         bytes[1] == 0x49 &&
         bytes[2] == 0x46;
-    final isWebp = bytes.length >= 12 &&
+    final isWebp =
+        bytes.length >= 12 &&
         bytes[0] == 0x52 && // R
         bytes[1] == 0x49 && // I
         bytes[2] == 0x46 && // F
@@ -341,7 +349,10 @@ class QRScannerService {
   }
 
   /// Validate manual URL before downloading
-  Future<bool> validateManualUrl(String url, {bool allowInsecureHttp = false}) async {
+  Future<bool> validateManualUrl(
+    String url, {
+    bool allowInsecureHttp = false,
+  }) async {
     try {
       final uri = _parseAndValidate(url, allowInsecureHttp: allowInsecureHttp);
       final response = await http.head(uri).timeout(networkTimeout);

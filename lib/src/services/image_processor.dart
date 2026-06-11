@@ -97,7 +97,8 @@ class ImageProcessor {
       return {
         'processedImageData': result.processedImageData,
         'detectedEdges': edges,
-        'metadata': result.metadata ??
+        'metadata':
+            result.metadata ??
             const {
               'autoCrop': {'applied': false},
             },

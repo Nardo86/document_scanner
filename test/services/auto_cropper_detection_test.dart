@@ -30,22 +30,27 @@ _sheetOnDarkBackground() {
 
 void main() {
   group('AutoCropper - real detection (issue #30)', () {
-    test('detects a bright sheet on a dark background with high confidence',
-        () async {
-      final fixture = _sheetOnDarkBackground();
-      final result = await AutoCropper().autoCrop(fixture.bytes);
+    test(
+      'detects a bright sheet on a dark background with high confidence',
+      () async {
+        final fixture = _sheetOnDarkBackground();
+        final result = await AutoCropper().autoCrop(fixture.bytes);
 
-      expect(result.fallbackUsed, isFalse,
-          reason: 'a clear sheet should not fall back');
-      expect(result.confidence, greaterThanOrEqualTo(0.5));
-      expect(result.corners.length, 4);
-      expect(result.croppedImageData, isNotEmpty);
-      expect(result.metadata['detectionMethod'], 'otsu_white_blob');
-    });
+        expect(
+          result.fallbackUsed,
+          isFalse,
+          reason: 'a clear sheet should not fall back',
+        );
+        expect(result.confidence, greaterThanOrEqualTo(0.5));
+        expect(result.corners.length, 4);
+        expect(result.croppedImageData, isNotEmpty);
+        expect(result.metadata['detectionMethod'], 'otsu_white_blob');
+      },
+    );
 
     test('detected corners are close to the sheet rectangle', () async {
       final fixture = _sheetOnDarkBackground();
-      final result = await AutoCropper().detectCorners(fixture.bytes);
+      final result = AutoCropper().detectCorners(fixture.bytes);
 
       expect(result, isNotNull);
       final corners = result!.corners; // TL, TR, BR, BL

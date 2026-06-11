@@ -253,7 +253,8 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
                     ? Image.memory(
                         page.processedImageData!,
                         fit: BoxFit.cover,
-                        cacheWidth: 400, // decode at thumbnail size, not full-res
+                        cacheWidth:
+                            400, // decode at thumbnail size, not full-res
                         errorBuilder: (context, error, stack) => const Center(
                           child: Icon(
                             Icons.broken_image,
@@ -550,8 +551,9 @@ class _MultiPageScannerWidgetState extends State<MultiPageScannerWidget> {
 
   /// Finalize document (combine all pages into PDF)
   Future<void> _finalizeDocument() async {
-    if (_currentSession == null || !_currentSession!.isReadyForFinalization)
+    if (_currentSession == null || !_currentSession!.isReadyForFinalization) {
       return;
+    }
 
     setState(() {
       _isProcessing = true;

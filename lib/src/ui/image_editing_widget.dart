@@ -557,7 +557,11 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
               Icons.document_scanner,
             ),
             _buildFormatButton('Legal', DocumentFormat.usLegal, Icons.article),
-            _buildFormatButton('Receipt', DocumentFormat.receipt, Icons.receipt),
+            _buildFormatButton(
+              'Receipt',
+              DocumentFormat.receipt,
+              Icons.receipt,
+            ),
             _buildFormatButton(
               'Square',
               DocumentFormat.square,
@@ -596,7 +600,11 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
     );
   }
 
-  Widget _buildActiveSettingIndicator(String label, IconData icon, bool active) {
+  Widget _buildActiveSettingIndicator(
+    String label,
+    IconData icon,
+    bool active,
+  ) {
     final scheme = Theme.of(context).colorScheme;
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -633,7 +641,11 @@ class _ImageEditingWidgetState extends State<ImageEditingWidget> {
     );
   }
 
-  Widget _buildFormatButton(String label, DocumentFormat format, IconData icon) {
+  Widget _buildFormatButton(
+    String label,
+    DocumentFormat format,
+    IconData icon,
+  ) {
     return _buildSelectableButton(
       label: label,
       icon: icon,

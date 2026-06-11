@@ -14,11 +14,13 @@ export 'src/models/scan_result.dart';
 
 // Orchestrator and QR helper (public entry points).
 export 'src/services/document_scanner_service.dart';
-export 'src/services/qr_scanner_service.dart' show QRScannerService, QRScannerScreen;
+export 'src/services/qr_scanner_service.dart'
+    show QRScannerService, QRScannerScreen;
 
 // Ready-made UI widgets.
 export 'src/ui/document_scanner_widget.dart';
 export 'src/ui/multi_page_scanner_widget.dart';
 export 'src/ui/image_editing_widget.dart' show ImageEditingWidget;
 export 'src/ui/pdf_preview_widget.dart' show PdfPreviewWidget;
-export 'src/ui/document_camera_screen.dart' show DocumentCameraScreen, CameraGuideResult;
+export 'src/ui/document_camera_screen.dart'
+    show DocumentCameraScreen, CameraGuideResult;

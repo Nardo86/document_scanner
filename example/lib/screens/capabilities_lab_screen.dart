@@ -389,17 +389,19 @@ class _CapabilitiesLabScreenState extends State<CapabilitiesLabScreen> {
     try {
       ScanResult result;
       if (useCamera) {
-        result = await DocumentScannerService.instance.scanDocumentWithProcessing(
-          documentType: _documentType,
-          processingOptions: options,
-          customFilename: filename,
-        );
+        result = await DocumentScannerService.instance
+            .scanDocumentWithProcessing(
+              documentType: _documentType,
+              processingOptions: options,
+              customFilename: filename,
+            );
       } else {
-        result = await DocumentScannerService.instance.importDocumentWithProcessing(
-          documentType: _documentType,
-          processingOptions: options,
-          customFilename: filename,
-        );
+        result = await DocumentScannerService.instance
+            .importDocumentWithProcessing(
+              documentType: _documentType,
+              processingOptions: options,
+              customFilename: filename,
+            );
       }
 
       if (!mounted) return;

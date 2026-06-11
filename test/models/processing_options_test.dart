@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:document_scanner/src/models/scanned_document.dart';
 
@@ -56,7 +55,12 @@ void main() {
 
     test('keeps crop corners when not clearing', () {
       final withCrop = const ImageEditingOptions().copyWith(
-        cropCorners: const [Offset(1, 1), Offset(2, 2), Offset(3, 3), Offset(4, 4)],
+        cropCorners: const [
+          Offset(1, 1),
+          Offset(2, 2),
+          Offset(3, 3),
+          Offset(4, 4),
+        ],
       );
       final rotated = withCrop.copyWith(rotationDegrees: 90);
       expect(rotated.cropCorners, hasLength(4));

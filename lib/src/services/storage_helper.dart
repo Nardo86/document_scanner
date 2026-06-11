@@ -70,20 +70,27 @@ class StorageHelper {
     Map<String, dynamic>? metadata,
   }) {
     if (customFilename != null && customFilename.trim().isNotEmpty) {
-      return _sanitizeFilename(customFilename, fallback: _defaultName(documentType, timestamp));
+      return _sanitizeFilename(
+        customFilename,
+        fallback: _defaultName(documentType, timestamp),
+      );
     }
 
     if (metadata != null) {
       final suggested = metadata['suggestedFilename'] as String?;
       if (suggested != null && suggested.trim().isNotEmpty) {
-        return _sanitizeFilename(suggested, fallback: _defaultName(documentType, timestamp));
+        return _sanitizeFilename(
+          suggested,
+          fallback: _defaultName(documentType, timestamp),
+        );
       }
 
       final brand = metadata['productBrand'] as String?;
       final model = metadata['productModel'] as String?;
       if (brand != null && model != null) {
         final dateStr =
-            (metadata['purchaseDate'] as String?) ?? _formatTimestamp(timestamp);
+            (metadata['purchaseDate'] as String?) ??
+            _formatTimestamp(timestamp);
         final typeStr = _typeSuffix(documentType);
         return _sanitizeFilename(
           '${dateStr}_${_clean(brand)}_${_clean(model)}_$typeStr',
@@ -151,7 +158,9 @@ class StorageHelper {
     // Re-sanitize defensively: callers may pass a name that did not go through
     // generateFilename().
     final safe = _sanitizeFilename(filename, fallback: 'document');
-    final target = path.normalize(path.join(directory.path, '$safe.$extension'));
+    final target = path.normalize(
+      path.join(directory.path, '$safe.$extension'),
+    );
 
     // Hard guarantee the write stays inside the target directory.
     if (!path.isWithin(directory.path, target)) {
