@@ -200,6 +200,15 @@ class _DocumentCameraScreenState extends State<DocumentCameraScreen>
   }
 
   Widget _buildCameraView() {
+    // `controller.value.aspectRatio` is the sensor ratio in *landscape*
+    // (>= 1). On a portrait screen we must invert it, otherwise the preview is
+    // forced into a wide/short box: small and horizontally squashed.
+    final sensorRatio = _controller!.value.aspectRatio;
+    final previewRatio =
+        MediaQuery.of(context).orientation == Orientation.portrait
+        ? 1 / sensorRatio
+        : sensorRatio;
+
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -207,7 +216,7 @@ class _DocumentCameraScreenState extends State<DocumentCameraScreen>
         // so that fractional corner positions map directly to the captured image.
         Center(
           child: AspectRatio(
-            aspectRatio: _controller!.value.aspectRatio,
+            aspectRatio: previewRatio,
             child: Stack(
               fit: StackFit.expand,
               children: [
