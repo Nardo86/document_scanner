@@ -61,8 +61,9 @@ earlier `1.x` tags and the never-tagged/withdrawn `2.x` line are superseded).
 ### Build / tooling
 - Single source of truth for the version across `pubspec.yaml`, README and this
   changelog, matching the `v3.0.0` tag.
-- Dependencies: removed unused `printing` and `file_picker`; bumped `camera` to
-  `^0.12.0+1`; fixed the contradictory environment constraint
+- Dependencies: removed unused `printing` and `file_picker`; pinned `camera` to
+  `^0.11.2+1` (0.12+ needs Dart ≥3.9 / Flutter 3.35+); fixed the contradictory
+  environment constraint
   (`flutter: ">=3.32.0"` to match `sdk: ^3.8.1`); aligned example `flutter_lints`.
 - CI: added a PR/branch `ci.yml` (format, analyze, test, `pub publish --dry-run`,
   pana), regenerate mocks via `build_runner`, assert tag == pubspec version on

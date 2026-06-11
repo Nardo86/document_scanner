@@ -31,8 +31,9 @@ dependencies:
   # Native PDF preview rendering
   pdfx: ^2.4.1
 
-  # Live camera capture (guided overlay) + gallery/quick capture
-  camera: ^0.12.0+1
+  # Live camera capture (guided overlay) + gallery/quick capture.
+  # Pinned to the 0.11 line: camera 0.12+ requires Dart >=3.9 (Flutter 3.35+).
+  camera: ^0.11.2+1
   image_picker: ^1.1.2
 
   # QR code scanning (manual download links)
