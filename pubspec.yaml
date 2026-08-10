@@ -47,7 +47,7 @@ dependencies:
   path: ^1.9.1
 
   # Runtime permissions (camera)
-  permission_handler: ^12.0.1
+  permission_handler: ">=12.0.1 <14.0.0"
 
 dev_dependencies:
   flutter_test:
