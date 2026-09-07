@@ -33,7 +33,7 @@ dependencies:
 
   # Live camera capture (guided overlay) + gallery/quick capture.
   # Pinned to the 0.11 line: camera 0.12+ requires Dart >=3.9 (Flutter 3.35+).
-  camera: ^0.11.2+1
+  camera: ">=0.11.2+1 <0.13.0"
   image_picker: ^1.1.2
 
   # QR code scanning (manual download links)
